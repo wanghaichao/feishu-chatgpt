@@ -13,7 +13,13 @@ import (
 	"start-feishubot/services/loadbalancer"
 	"strings"
 	"time"
+	"sync"
 )
+
+type Messages struct {
+    Role    string `json:"role"`
+    Content string `json:"content"`
+}
 
 type ChatGPT struct {
 	Lb        *loadbalancer.LoadBalancer
