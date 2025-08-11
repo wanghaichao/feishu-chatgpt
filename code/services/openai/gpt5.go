@@ -67,8 +67,6 @@ func (gpt *ChatGPT) createAssistant() (string, error) {
 	payload := map[string]interface{}{
 		"name":         "Web-Enabled GPT-5",
 		"model":        "gpt-5",
-		"tools":        []map[string]string{{"type": "browser"}},
-		"instructions": "You are a helpful assistant with web browsing capabilities.",
 	}
 	var result struct {
 		ID string `json:"id"`
