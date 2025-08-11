@@ -35,7 +35,6 @@ type ChatGPTRequestBody struct {
 	Model            string     `json:"model"`
 	Messages         []Messages `json:"messages"`
 	MaxTokens        int        `json:"max_completion_tokens"`
-	Temperature      float32    `json:"temperature"`
 	TopP             int        `json:"top_p"`
 	FrequencyPenalty int        `json:"frequency_penalty"`
 	PresencePenalty  int        `json:"presence_penalty"`
@@ -46,7 +45,6 @@ func (gpt ChatGPT) Completions(msg []Messages) (resp Messages, err error) {
 		Model:            engine,
 		Messages:         msg,
 		MaxTokens:        maxTokens,
-		Temperature:      temperature,
 		TopP:             1,
 		FrequencyPenalty: 0,
 		PresencePenalty:  0,
