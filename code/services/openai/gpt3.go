@@ -7,45 +7,33 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 )
 
-const engine = "gpt-5"
-const cacheFile = "assistant_id.txt"
-
-type Messages struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+// 给 ChatGPT 结构体新增字段：
+func (gpt *ChatGPT) ensureFields() {
+	// 反射或初始化不能改现有结构体，这里用sync.Once做初始化保护的替代，简化用mutex
+	// 如果你需要，可在ChatGPT定义添加下面字段：
+	// AssistantID string
+	// mu sync.Mutex
 }
 
+// 这里假设你已在ChatGPT结构体加了下面字段（如果没加，需要你加）：
+/*
 type ChatGPT struct {
-	ApiUrl      string
-	ApiKey      string
+	// 你原有字段...
 	AssistantID string
-	mu          sync.Mutex // 保证多协程安全
+	mu          sync.Mutex
 }
+*/
 
-// NewChatGPT 从环境变量读取配置初始化
-func NewChatGPT() *ChatGPT {
-	apiKey := os.Getenv("OPENAI_KEY")
-	apiUrl := os.Getenv("OPENAI_API_URL")
-	if apiUrl == "" {
-		apiUrl = "https://api.openai.com/v1"
-	}
-	return &ChatGPT{
-		ApiKey: apiKey,
-		ApiUrl: apiUrl,
-	}
-}
-
-// Completions 保持旧接口，内部完成联网GPT-5 Assistants API调用，带浏览器联网能力
+// Completions 使用 Assistants API 与浏览器工具
 func (gpt *ChatGPT) Completions(msg []Messages) (Messages, error) {
 	gpt.mu.Lock()
 	defer gpt.mu.Unlock()
 
-	// 1. 加载缓存或创建 Assistant
+	// 1. 读取缓存或创建 Assistant
 	if gpt.AssistantID == "" {
 		id, err := gpt.loadAssistantID()
 		if err != nil || id == "" {
@@ -53,12 +41,12 @@ func (gpt *ChatGPT) Completions(msg []Messages) (Messages, error) {
 			if err != nil {
 				return Messages{}, err
 			}
-			_ = ioutil.WriteFile(cacheFile, []byte(id), 0644)
+			_ = ioutil.WriteFile("assistant_id.txt", []byte(id), 0644)
 		}
 		gpt.AssistantID = id
 	}
 
-	// 2. 创建 Thread
+	// 2. 创建线程
 	threadID, err := gpt.createThread()
 	if err != nil {
 		return Messages{}, err
@@ -76,7 +64,7 @@ func (gpt *ChatGPT) Completions(msg []Messages) (Messages, error) {
 		return Messages{}, err
 	}
 
-	// 5. 获取返回内容
+	// 5. 获取回答
 	outputs, err := gpt.getMessages(threadID)
 	if err != nil {
 		return Messages{}, err
@@ -85,26 +73,37 @@ func (gpt *ChatGPT) Completions(msg []Messages) (Messages, error) {
 		return Messages{}, errors.New("AI 没有返回内容")
 	}
 
-	return Messages{
-		Role:    "assistant",
-		Content: outputs[0],
-	}, nil
+	return Messages{Role: "assistant", Content: outputs[0]}, nil
 }
 
-// ---- Assistants API ----
+// 下面是辅助方法，所有请求都走你现有 sendRequestWithBodyType，且兼容多 API Key 负载均衡
 
 func (gpt *ChatGPT) createAssistant() (string, error) {
 	payload := map[string]interface{}{
 		"name":         "Web-Enabled GPT-5",
-		"model":        engine,
+		"model":        "gpt-5",
 		"tools":        []map[string]string{{"type": "browser"}},
 		"instructions": "You are a helpful assistant with web browsing capabilities.",
 	}
-	return gpt.postAndGetID("/assistants", payload, "创建 Assistant 失败")
+	var result struct {
+		ID string `json:"id"`
+	}
+	err := gpt.sendRequestWithBodyType(gpt.ApiUrl+"/assistants", "POST", jsonBody, payload, &result)
+	if err != nil {
+		return "", fmt.Errorf("创建 Assistant 失败: %w", err)
+	}
+	return result.ID, nil
 }
 
 func (gpt *ChatGPT) createThread() (string, error) {
-	return gpt.postAndGetID("/threads", nil, "创建 Thread 失败")
+	var result struct {
+		ID string `json:"id"`
+	}
+	err := gpt.sendRequestWithBodyType(gpt.ApiUrl+"/threads", "POST", jsonBody, nil, &result)
+	if err != nil {
+		return "", fmt.Errorf("创建 Thread 失败: %w", err)
+	}
+	return result.ID, nil
 }
 
 func (gpt *ChatGPT) addMessage(threadID, content string) error {
@@ -112,118 +111,79 @@ func (gpt *ChatGPT) addMessage(threadID, content string) error {
 		"role":    "user",
 		"content": content,
 	}
-	return gpt.postNoReturn(fmt.Sprintf("/threads/%s/messages", threadID), payload, "添加消息失败")
+	return gpt.sendRequestWithBodyType(fmt.Sprintf("%s/threads/%s/messages", gpt.ApiUrl, threadID), "POST", jsonBody, payload, nil)
 }
 
 func (gpt *ChatGPT) runAssistant(threadID, assistantID string) error {
 	payload := map[string]interface{}{
 		"assistant_id": assistantID,
 	}
-	return gpt.postNoReturn(fmt.Sprintf("/threads/%s/runs", threadID), payload, "运行 Assistant 失败")
+	return gpt.sendRequestWithBodyType(fmt.Sprintf("%s/threads/%s/runs", gpt.ApiUrl, threadID), "POST", jsonBody, payload, nil)
 }
 
 func (gpt *ChatGPT) getMessages(threadID string) ([]string, error) {
-	req, _ := http.NewRequest("GET", gpt.ApiUrl+"/threads/"+threadID+"/messages", nil)
-	req.Header.Set("Authorization", "Bearer "+gpt.ApiKey)
+	reqUrl := fmt.Sprintf("%s/threads/%s/messages", gpt.ApiUrl, threadID)
+	client := &http.Client{Timeout: 20 * time.Second}
 
 	for i := 0; i < 10; i++ {
-		resp, err := http.DefaultClient.Do(req)
+		req, err := http.NewRequest("GET", reqUrl, nil)
+		if err != nil {
+			return nil, err
+		}
+		// 走负载均衡拿 ApiKey
+		api := gpt.Lb.GetAPI()
+		req.Header.Set("Authorization", "Bearer "+api.Key)
+
+		resp, err := client.Do(req)
 		if err != nil {
 			return nil, err
 		}
 		body, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
 
-		var result map[string]interface{}
+		var result struct {
+			Data []struct {
+				Role    string          `json:"role"`
+				Content []json.RawMessage `json:"content"`
+			} `json:"data"`
+		}
 		if err := json.Unmarshal(body, &result); err != nil {
 			return nil, err
 		}
 
-		if data, ok := result["data"].([]interface{}); ok {
-			var outputs []string
-			for _, msg := range data {
-				m := msg.(map[string]interface{})
-				if m["role"] == "assistant" {
-					if content, ok := m["content"].([]interface{}); ok {
-						for _, c := range content {
-							cm := c.(map[string]interface{})
-							if cm["type"] == "text" {
-								text := cm["text"].(map[string]interface{})
-								outputs = append(outputs, text["value"].(string))
+		var outputs []string
+		for _, d := range result.Data {
+			if d.Role == "assistant" {
+				for _, c := range d.Content {
+					var cm map[string]interface{}
+					if err := json.Unmarshal(c, &cm); err == nil {
+						if cm["type"] == "text" {
+							if textVal, ok := cm["text"].(map[string]interface{}); ok {
+								if val, ok := textVal["value"].(string); ok {
+									outputs = append(outputs, val)
+								}
 							}
 						}
 					}
 				}
 			}
-			if len(outputs) > 0 {
-				return outputs, nil
-			}
 		}
-
+		if len(outputs) > 0 {
+			return outputs, nil
+		}
 		time.Sleep(2 * time.Second)
 	}
 	return nil, errors.New("等待超时，无返回消息")
 }
 
-// ---- 缓存操作 ----
+// 读取 AssistantID 缓存
 func (gpt *ChatGPT) loadAssistantID() (string, error) {
-	if _, err := os.Stat(cacheFile); os.IsNotExist(err) {
-		return "", nil
-	}
-	data, err := ioutil.ReadFile(cacheFile)
+	data, err := ioutil.ReadFile("assistant_id.txt")
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
 		return "", err
 	}
 	return string(data), nil
-}
-
-// ---- HTTP 请求辅助 ----
-func (gpt *ChatGPT) postAndGetID(path string, payload interface{}, errMsg string) (string, error) {
-	var buf *bytes.Buffer
-	if payload != nil {
-		data, _ := json.Marshal(payload)
-		buf = bytes.NewBuffer(data)
-	} else {
-		buf = bytes.NewBuffer([]byte{})
-	}
-
-	req, _ := http.NewRequest("POST", gpt.ApiUrl+path, buf)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+gpt.ApiKey)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	body, _ := ioutil.ReadAll(resp.Body)
-	resp.Body.Close()
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return "", err
-	}
-
-	if id, ok := result["id"].(string); ok {
-		return id, nil
-	}
-	return "", errors.New(errMsg + ": " + string(body))
-}
-
-func (gpt *ChatGPT) postNoReturn(path string, payload interface{}, errMsg string) error {
-	data, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", gpt.ApiUrl+path, bytes.NewBuffer(data))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+gpt.ApiKey)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	body, _ := ioutil.ReadAll(resp.Body)
-	resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return errors.New(errMsg + ": " + string(body))
-	}
-	return nil
 }
