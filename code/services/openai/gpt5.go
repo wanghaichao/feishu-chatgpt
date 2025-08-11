@@ -6,14 +6,8 @@ import (
 
 const (
 	maxTokens   = 10000
-	temperature = 0.7
 	engine      = "gpt-5"
 )
-
-type Messages struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
 
 // ChatGPTResponseBody 请求体
 type ChatGPTResponseBody struct {
@@ -36,7 +30,6 @@ type ChatGPTRequestBody struct {
 	Model       string     `json:"model"`
 	Messages    []Messages `json:"messages"`
 	MaxTokens   int        `json:"max_tokens"`
-	Temperature float32    `json:"temperature"`
 }
 
 func (gpt ChatGPT) Completions(msg []Messages) (resp Messages, err error) {
@@ -44,7 +37,6 @@ func (gpt ChatGPT) Completions(msg []Messages) (resp Messages, err error) {
 		Model:       engine,
 		Messages:    msg,
 		MaxTokens:   maxTokens,
-		Temperature: temperature,
 	}
 	gptResponseBody := &ChatGPTResponseBody{}
 	err = gpt.sendRequestWithBodyType(gpt.ApiUrl+"/v1/chat/completions", "POST",
