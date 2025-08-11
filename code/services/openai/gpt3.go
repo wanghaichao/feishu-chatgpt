@@ -42,9 +42,6 @@ func (gpt ChatGPT) Completions(msg []Messages) (resp Messages, err error) {
 		Model:            engine,
 		Messages:         msg,
 		MaxTokens:        maxTokens,
-		TopP:             1,
-		FrequencyPenalty: 0,
-		PresencePenalty:  0,
 	}
 	gptResponseBody := &ChatGPTResponseBody{}
 	err = gpt.sendRequestWithBodyType(gpt.ApiUrl+"/v1/chat/completions", "POST",
