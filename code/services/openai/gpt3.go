@@ -34,7 +34,7 @@ type ChatGPTChoiceItem struct {
 type ChatGPTRequestBody struct {
 	Model            string     `json:"model"`
 	Messages         []Messages `json:"messages"`
-	MaxTokens        int        `json:"max_tokens"`
+	MaxTokens        int        `json:"max_completion_tokens"`
 	Temperature      float32    `json:"temperature"`
 	TopP             int        `json:"top_p"`
 	FrequencyPenalty int        `json:"frequency_penalty"`
