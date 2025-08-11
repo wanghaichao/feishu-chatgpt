@@ -113,6 +113,7 @@ func (gpt ChatGPT) doAPIRequestWithRetry(url, method string, bodyType requestBod
 
 			body, _ := ioutil.ReadAll(response.Body)
 			fmt.Println("body", string(body))
+			fmt.Printf("API请求失败，状态码：%d，响应体：%s\n", response.StatusCode, string(body))
 
 			gpt.Lb.SetAvailability(api.Key, false)
 			if retry == maxRetries {
@@ -166,11 +167,6 @@ func (gpt ChatGPT) sendRequestWithBodyType(link, method string, bodyType request
 		}
 		err = gpt.doAPIRequestWithRetry(link, method, bodyType,
 			requestBody, responseBody, proxyClient, 3)
-		if err != nil || response.StatusCode < 200 || response.StatusCode >= 300 {
-		    body, _ := ioutil.ReadAll(response.Body)
-		    fmt.Printf("API请求失败，状态码：%d，响应体：%s\n", response.StatusCode, string(body))
-		    // 其它逻辑
-		}
 	}
 
 	return err
