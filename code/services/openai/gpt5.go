@@ -1,7 +1,6 @@
 package openai
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,29 +10,16 @@ import (
 	"time"
 )
 
-// 给 ChatGPT 结构体新增字段：
-func (gpt *ChatGPT) ensureFields() {
-	// 反射或初始化不能改现有结构体，这里用sync.Once做初始化保护的替代，简化用mutex
-	// 如果你需要，可在ChatGPT定义添加下面字段：
-	// AssistantID string
-	// mu sync.Mutex
-}
+// 新增字段到你 ChatGPT 结构体里：
+// AssistantID string
+// mu          sync.Mutex
 
-// 这里假设你已在ChatGPT结构体加了下面字段（如果没加，需要你加）：
-/*
-type ChatGPT struct {
-	// 你原有字段...
-	AssistantID string
-	mu          sync.Mutex
-}
-*/
-
-// Completions 使用 Assistants API 与浏览器工具
+// Completions 基于 GPT-5 Assistants API 实现联网对话
 func (gpt *ChatGPT) Completions(msg []Messages) (Messages, error) {
 	gpt.mu.Lock()
 	defer gpt.mu.Unlock()
 
-	// 1. 读取缓存或创建 Assistant
+	// 1. 如果没有 assistant_id，则创建一个
 	if gpt.AssistantID == "" {
 		id, err := gpt.loadAssistantID()
 		if err != nil || id == "" {
@@ -46,20 +32,20 @@ func (gpt *ChatGPT) Completions(msg []Messages) (Messages, error) {
 		gpt.AssistantID = id
 	}
 
-	// 2. 创建线程
+	// 2. 创建对话线程
 	threadID, err := gpt.createThread()
 	if err != nil {
 		return Messages{}, err
 	}
 
-	// 3. 发送用户消息
+	// 3. 发送消息
 	for _, m := range msg {
 		if err := gpt.addMessage(threadID, m.Content); err != nil {
 			return Messages{}, err
 		}
 	}
 
-	// 4. 运行 Assistant
+	// 4. 运行 assistant
 	if err := gpt.runAssistant(threadID, gpt.AssistantID); err != nil {
 		return Messages{}, err
 	}
@@ -76,7 +62,7 @@ func (gpt *ChatGPT) Completions(msg []Messages) (Messages, error) {
 	return Messages{Role: "assistant", Content: outputs[0]}, nil
 }
 
-// 下面是辅助方法，所有请求都走你现有 sendRequestWithBodyType，且兼容多 API Key 负载均衡
+// 辅助函数定义（使用你原有 sendRequestWithBodyType 函数）
 
 func (gpt *ChatGPT) createAssistant() (string, error) {
 	payload := map[string]interface{}{
@@ -130,7 +116,6 @@ func (gpt *ChatGPT) getMessages(threadID string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		// 走负载均衡拿 ApiKey
 		api := gpt.Lb.GetAPI()
 		req.Header.Set("Authorization", "Bearer "+api.Key)
 
@@ -143,7 +128,7 @@ func (gpt *ChatGPT) getMessages(threadID string) ([]string, error) {
 
 		var result struct {
 			Data []struct {
-				Role    string          `json:"role"`
+				Role    string            `json:"role"`
 				Content []json.RawMessage `json:"content"`
 			} `json:"data"`
 		}
@@ -176,14 +161,11 @@ func (gpt *ChatGPT) getMessages(threadID string) ([]string, error) {
 	return nil, errors.New("等待超时，无返回消息")
 }
 
-// 读取 AssistantID 缓存
+// 读取 assistant_id.txt 文件，缓存 assistant id
 func (gpt *ChatGPT) loadAssistantID() (string, error) {
 	data, err := ioutil.ReadFile("assistant_id.txt")
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return "", nil
-		}
-		return "", err
+		return "", nil
 	}
 	return string(data), nil
 }

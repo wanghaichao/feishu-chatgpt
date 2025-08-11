@@ -20,6 +20,9 @@ type ChatGPT struct {
 	ApiKey    []string
 	ApiUrl    string
 	HttpProxy string
+	  // 这里加
+    AssistantID string
+    mu          sync.Mutex
 }
 type requestBodyType int
 
