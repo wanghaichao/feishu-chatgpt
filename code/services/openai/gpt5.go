@@ -29,7 +29,7 @@ type ChatGPTChoiceItem struct {
 type ChatGPTRequestBody struct {
 	Model       string     `json:"model"`
 	Messages    []Messages `json:"messages"`
-	MaxTokens   int        `json:"max_tokens"`
+	MaxTokens   int        `json:"max_completion_tokens"`
 }
 
 func (gpt ChatGPT) Completions(msg []Messages) (resp Messages, err error) {
