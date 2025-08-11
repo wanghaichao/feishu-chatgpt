@@ -100,7 +100,8 @@ func (gpt ChatGPT) doAPIRequestWithRetry(url, method string, bodyType requestBod
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 	}
 	req.Header.Set("Authorization", "Bearer "+api.Key)
-
+	req.Header.Set("OpenAI-Beta", "assistants=v2")
+	
 	var response *http.Response
 	var retry int
 	for retry = 0; retry <= maxRetries; retry++ {
