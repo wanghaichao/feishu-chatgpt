@@ -175,7 +175,7 @@ func (gpt ChatGPT) doAPIRequestWithRetry(url, method string, bodyType requestBod
 		return err
 	}
 	if gpt.DebugHTTP {
-		fmt.Printf("[HTTP] Response OK status=%d, body=%s\n", response.StatusCode, string(body))
+		fmt.Printf("[HTTP] Response OK status=%d", response.StatusCode)
 	}
 
 	err = json.Unmarshal(body, responseBody)
