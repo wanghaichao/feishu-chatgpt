@@ -155,6 +155,8 @@ func withNote(note string) larkcard.MessageCardElement {
 func withMainMd(msg string) larkcard.MessageCardElement {
 	msg, i := processMessage(msg)
 	msg = processNewLine(msg)
+	msg = processUnicode(msg)
+	msg = processQuote(msg)
 	if i != nil {
 		return nil
 	}
@@ -201,18 +203,15 @@ func withMdAndExtraBtn(msg string, btn *larkcard.
 	MessageCardEmbedButton) larkcard.MessageCardElement {
 	msg, i := processMessage(msg)
 	msg = processNewLine(msg)
+	msg = processUnicode(msg)
+	msg = processQuote(msg)
 	if i != nil {
 		return nil
 	}
 	mainElement := larkcard.NewMessageCardDiv().
-		Fields(
-			[]*larkcard.MessageCardField{
-				larkcard.NewMessageCardField().
-					Text(larkcard.NewMessageCardLarkMd().
-						Content(msg).
-						Build()).
-					IsShort(true).
-					Build()}).
+		Text(larkcard.NewMessageCardLarkMd().
+			Content(msg).
+			Build()).
 		Extra(btn).
 		Build()
 	return mainElement
