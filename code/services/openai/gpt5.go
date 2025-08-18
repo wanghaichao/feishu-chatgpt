@@ -6,7 +6,7 @@ import (
 
 const (
 	maxTokens   = 10000
-	engine      = "gpt-5"
+	engine      = "bot-20250818113927-59bfm"
 )
 
 // ChatGPTResponseBody 请求体
