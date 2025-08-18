@@ -34,6 +34,11 @@ type ChatGPTRequestBody struct {
 	MaxTokens int        `json:"max_completion_tokens"`
 }
 
+type ArkOpenAICompatRequestBody struct {
+	Model    string     `json:"model"`
+	Messages []Messages `json:"messages"`
+}
+
 type ArkBotRequestBody struct {
 	Input ArkInput `json:"input"`
 }
@@ -57,18 +62,27 @@ func (gpt ChatGPT) Completions(msg []Messages) (resp Messages, err error) {
 		if gpt.ArkApiUrl == "" || gpt.ArkBotId == "" {
 			return Messages{}, errors.New("ark api url or bot id is empty")
 		}
-		requestBody := ArkBotRequestBody{Input: ArkInput{Messages: msg}}
-		arkResp := &ArkBotResponseBody{}
 		base := strings.TrimRight(gpt.ArkApiUrl, "/")
 		if !strings.Contains(base, "/bots") {
 			base = base + "/bots"
 		}
-		endpoint := fmt.Sprintf("%s/chat/completions", base)
-		err = gpt.sendRequestWithBodyType(endpoint, "POST", jsonBody, requestBody, arkResp)
-		if err == nil && len(arkResp.Output.Choices) > 0 {
-			return arkResp.Output.Choices[0].Message, nil
+		// 1) 优先走 OpenAI 兼容路径: /bots/chat/completions，body 为 {model, messages}
+		endpointA := fmt.Sprintf("%s/chat/completions", base)
+		compatReq := ArkOpenAICompatRequestBody{Model: gpt.ArkBotId, Messages: msg}
+		compatResp := &ChatGPTResponseBody{}
+		err = gpt.sendRequestWithBodyType(endpointA, "POST", jsonBody, compatReq, compatResp)
+		if err == nil && len(compatResp.Choices) > 0 {
+			return compatResp.Choices[0].Message, nil
 		}
-		return Messages{}, errors.New("ark bots 请求失败")
+		// 2) 失败则回退到 /bots/{botId}/completions，body 为 {input:{messages}}
+		endpointB := fmt.Sprintf("%s/%s/completions", base, gpt.ArkBotId)
+		botReq := ArkBotRequestBody{Input: ArkInput{Messages: msg}}
+		botResp := &ArkBotResponseBody{}
+		err = gpt.sendRequestWithBodyType(endpointB, "POST", jsonBody, botReq, botResp)
+		if err == nil && len(botResp.Output.Choices) > 0 {
+			return botResp.Output.Choices[0].Message, nil
+		}
+		return Messages{}, errors.New("ark 请求失败")
 	}
 
 	requestBody := ChatGPTRequestBody{
