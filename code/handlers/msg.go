@@ -5,12 +5,13 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"github.com/google/uuid"
-	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
-	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/initialization"
 	"start-feishubot/services"
 	"start-feishubot/services/openai"
+
+	"github.com/google/uuid"
+	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
+	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
 type CardKind string
@@ -409,32 +410,13 @@ func replyMsg(ctx context.Context, msg string, msgId *string) error {
 	if i != nil {
 		return i
 	}
-	client := initialization.GetLarkClient()
-	content := larkim.NewTextMsgBuilder().
-		Text(msg).
-		Build()
-
-	resp, err := client.Im.Message.Reply(ctx, larkim.NewReplyMessageReqBuilder().
-		MessageId(*msgId).
-		Body(larkim.NewReplyMessageReqBodyBuilder().
-			MsgType(larkim.MsgTypeText).
-			Uuid(uuid.New().String()).
-			Content(content).
-			Build()).
-		Build())
-
-	// 处理错误
+	// 默认使用 Markdown 交互卡片
+	cardContent, err := newSimpleSendCard(withMainMd(msg))
 	if err != nil {
 		fmt.Println(err)
 		return err
 	}
-
-	// 服务端错误处理
-	if !resp.Success() {
-		fmt.Println(resp.Code, resp.Msg, resp.RequestId())
-		return err
-	}
-	return nil
+	return replyCard(ctx, msgId, cardContent)
 }
 
 func uploadImage(base64Str string) (*string, error) {
@@ -556,18 +538,19 @@ func sendMsg(ctx context.Context, msg string, chatId *string) error {
 		return i
 	}
 	client := initialization.GetLarkClient()
-	content := larkim.NewTextMsgBuilder().
-		Text(msg).
-		Build()
-
-	//fmt.Println("content", content)
+	// 默认使用 Markdown 交互卡片
+	cardContent, err := newSimpleSendCard(withMainMd(msg))
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
 
 	resp, err := client.Im.Message.Create(ctx, larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(larkim.ReceiveIdTypeChatId).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
-			MsgType(larkim.MsgTypeText).
+			MsgType(larkim.MsgTypeInteractive).
 			ReceiveId(*chatId).
-			Content(content).
+			Content(cardContent).
 			Build()).
 		Build())
 
