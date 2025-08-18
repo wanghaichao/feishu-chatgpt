@@ -7,6 +7,7 @@ import (
 	"start-feishubot/handlers"
 	"start-feishubot/initialization"
 	"start-feishubot/services/openai"
+	"start-feishubot/services/deepseek"
 
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 
@@ -27,7 +28,11 @@ func main() {
 	pflag.Parse()
 	config := initialization.LoadConfig(*cfg)
 	initialization.LoadLarkClient(*config)
-	gpt := openai.NewChatGPT(*config)
+	// gpt := openai.NewChatGPT(*config)
+	gpt := deepseek.NewGPT(
+    config.VolcEngineApiKey,         // 火山引擎API Key
+    "bot-20250818113927-59bfm",      // 您的应用ID
+)
 	handlers.InitHandlers(gpt, *config)
 
 	eventHandler := dispatcher.NewEventDispatcher(

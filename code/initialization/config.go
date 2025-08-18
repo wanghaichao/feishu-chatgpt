@@ -23,6 +23,9 @@ type Config struct {
 	KeyFile                    string
 	OpenaiApiUrl               string
 	HttpProxy                  string
+	VolcEngineApiKey string 
+	DeepSeekEngine   string 
+
 }
 
 func LoadConfig(cfg string) *Config {
@@ -49,6 +52,8 @@ func LoadConfig(cfg string) *Config {
 		KeyFile:                    getViperStringValue("KEY_FILE", "key.pem"),
 		OpenaiApiUrl:               getViperStringValue("API_URL", "https://ark.cn-beijing.volces.com/api/v3/bots"),
 		HttpProxy:                  getViperStringValue("HTTP_PROXY", ""),
+		VolcEngineApiKey:           getViperStringValue("VolcEngineApiKey", ""),
+		DeepSeekEngine:             getViperStringValue("DeepSeekEngine", ""),
 	}
 
 	return config
