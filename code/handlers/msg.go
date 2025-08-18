@@ -157,6 +157,7 @@ func withMainMd(msg string) larkcard.MessageCardElement {
 	msg = processNewLine(msg)
 	msg = processUnicode(msg)
 	msg = processQuote(msg)
+	msg = processMarkdownHeading(msg)
 	if i != nil {
 		return nil
 	}
@@ -205,6 +206,7 @@ func withMdAndExtraBtn(msg string, btn *larkcard.
 	msg = processNewLine(msg)
 	msg = processUnicode(msg)
 	msg = processQuote(msg)
+	msg = processMarkdownHeading(msg)
 	if i != nil {
 		return nil
 	}

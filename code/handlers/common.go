@@ -64,6 +64,13 @@ func processUnicode(msg string) string {
 	})
 }
 
+// 将 markdown 标题(#/##/###...)转换为加粗行，适配 LarkMd 卡片
+func processMarkdownHeading(msg string) string {
+	// 多行匹配标题行：行首可有空格，随后1-6个#和至少一个空格
+	re := regexp.MustCompile(`(?m)^[ \t]*#{1,6}[ \t]+(.+)$`)
+	return re.ReplaceAllString(msg, "**$1**")
+}
+
 func cleanTextBlock(msg string) string {
 	msg = processNewLine(msg)
 	msg = processUnicode(msg)
