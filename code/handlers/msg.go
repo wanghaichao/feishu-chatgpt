@@ -159,12 +159,9 @@ func withMainMd(msg string) larkcard.MessageCardElement {
 		return nil
 	}
 	mainElement := larkcard.NewMessageCardDiv().
-		Fields([]*larkcard.MessageCardField{larkcard.NewMessageCardField().
-			Text(larkcard.NewMessageCardLarkMd().
-				Content(msg).
-				Build()).
-			IsShort(true).
-			Build()}).
+		Text(larkcard.NewMessageCardLarkMd().
+			Content(msg).
+			Build()).
 		Build()
 	return mainElement
 }
@@ -581,7 +578,7 @@ func sendSystemInstructionCard(ctx context.Context,
 	sessionId *string, msgId *string, content string) {
 	newCard, _ := newSendCard(
 		withHeader("🥷  已进入角色扮演模式", larkcard.TemplateIndigo),
-		withMainText(content),
+		withMainMd(content),
 		withNote("请注意，这将开始一个全新的对话，您将无法利用之前话题的历史信息"))
 	replyCard(ctx, msgId, newCard)
 }
@@ -609,7 +606,7 @@ func sendNewTopicCard(ctx context.Context,
 	sessionId *string, msgId *string, content string) {
 	newCard, _ := newSendCard(
 		withHeader("👻️ 已开启新的话题", larkcard.TemplateBlue),
-		withMainText(content),
+		withMainMd(content),
 		withNote("提醒：点击对话框参与回复，可保持话题连贯"))
 	replyCard(ctx, msgId, newCard)
 }
