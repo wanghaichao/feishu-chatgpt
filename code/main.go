@@ -7,6 +7,7 @@ import (
 	"start-feishubot/handlers"
 	"start-feishubot/initialization"
 	"start-feishubot/services/openai"
+	"start-feishubot/services/deepseek"
 
 	larkcard "github.com/larksuite/oapi-sdk-go/v3/card"
 
