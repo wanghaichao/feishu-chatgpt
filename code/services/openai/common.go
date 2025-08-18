@@ -12,13 +12,13 @@ import (
 	"start-feishubot/initialization"
 	"start-feishubot/services/loadbalancer"
 	"strings"
-	"time"
 	"sync"
+	"time"
 )
 
 type Messages struct {
-    Role    string `json:"role"`
-    Content string `json:"content"`
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
 type ChatGPT struct {
@@ -26,10 +26,17 @@ type ChatGPT struct {
 	ApiKey    []string
 	ApiUrl    string
 	HttpProxy string
-	  // 这里加
-    AssistantID string
-    mu          sync.Mutex
+	// 这里加
+	AssistantID string
+	mu          sync.Mutex
+	// provider: openai|ark
+	Provider string
+	// Ark configs (single key)
+	ArkApiKey string
+	ArkApiUrl string
+	ArkBotId  string
 }
+
 type requestBodyType int
 
 const (
@@ -86,8 +93,18 @@ func (gpt ChatGPT) doAPIRequestWithRetry(url, method string, bodyType requestBod
 		return errors.New("unknown request body type")
 	}
 
-	if api == nil {
-		return errors.New("no available API")
+	// When provider is ark and endpoint requires a single API key, bypass load balancer
+	var authKey string
+	if gpt.Provider == "ark" {
+		authKey = gpt.ArkApiKey
+		if authKey == "" {
+			return errors.New("ark api key is empty")
+		}
+	} else {
+		if api == nil {
+			return errors.New("no available API")
+		}
+		authKey = api.Key
 	}
 
 	req, err := http.NewRequest(method, url, bytes.NewReader(requestBodyData))
@@ -99,9 +116,15 @@ func (gpt ChatGPT) doAPIRequestWithRetry(url, method string, bodyType requestBod
 	if bodyType == formVoiceDataBody || bodyType == formPictureDataBody {
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 	}
-	req.Header.Set("Authorization", "Bearer "+api.Key)
-	req.Header.Set("OpenAI-Beta", "assistants=v2")
-	
+	// headers per provider
+	if gpt.Provider == "ark" {
+		// Ark Bots v3 uses api key header
+		req.Header.Set("Authorization", "Bearer "+authKey)
+	} else {
+		req.Header.Set("Authorization", "Bearer "+authKey)
+		req.Header.Set("OpenAI-Beta", "assistants=v2")
+	}
+
 	var response *http.Response
 	var retry int
 	for retry = 0; retry <= maxRetries; retry++ {
@@ -116,7 +139,9 @@ func (gpt ChatGPT) doAPIRequestWithRetry(url, method string, bodyType requestBod
 			fmt.Println("body", string(body))
 			fmt.Printf("API请求失败，状态码：%d，响应体：%s\n", response.StatusCode, string(body))
 
-			gpt.Lb.SetAvailability(api.Key, false)
+			if gpt.Provider != "ark" && api != nil {
+				gpt.Lb.SetAvailability(api.Key, false)
+			}
 			if retry == maxRetries {
 				break
 			}
@@ -143,7 +168,9 @@ func (gpt ChatGPT) doAPIRequestWithRetry(url, method string, bodyType requestBod
 		return err
 	}
 
-	gpt.Lb.SetAvailability(api.Key, true)
+	if gpt.Provider != "ark" && api != nil {
+		gpt.Lb.SetAvailability(api.Key, true)
+	}
 	return nil
 }
 
@@ -183,5 +210,9 @@ func NewChatGPT(config initialization.Config) *ChatGPT {
 		ApiKey:    apiKeys,
 		ApiUrl:    apiUrl,
 		HttpProxy: httpProxy,
+		Provider:  config.Provider,
+		ArkApiKey: config.ArkApiKey,
+		ArkApiUrl: config.ArkApiUrl,
+		ArkBotId:  config.ArkBotId,
 	}
 }

@@ -5,8 +5,8 @@ import (
 )
 
 const (
-	maxTokens   = 10000
-	engine      = "gpt-5"
+	maxTokens = 10000
+	engine    = "gpt-5"
 )
 
 // ChatGPTResponseBody 请求体
@@ -27,16 +27,48 @@ type ChatGPTChoiceItem struct {
 
 // ChatGPTRequestBody 响应体
 type ChatGPTRequestBody struct {
-	Model       string     `json:"model"`
-	Messages    []Messages `json:"messages"`
-	MaxTokens   int        `json:"max_completion_tokens"`
+	Model     string     `json:"model"`
+	Messages  []Messages `json:"messages"`
+	MaxTokens int        `json:"max_completion_tokens"`
+}
+
+type ArkBotRequestBody struct {
+	Input ArkInput `json:"input"`
+}
+
+type ArkInput struct {
+	Messages []Messages `json:"messages"`
+}
+
+type ArkBotResponseBody struct {
+	ID     string `json:"id"`
+	Output struct {
+		Choices []struct {
+			Message Messages `json:"message"`
+		} `json:"choices"`
+	} `json:"output"`
 }
 
 func (gpt ChatGPT) Completions(msg []Messages) (resp Messages, err error) {
+	// Ark provider branch
+	if gpt.Provider == "ark" {
+		if gpt.ArkApiUrl == "" || gpt.ArkBotId == "" {
+			return Messages{}, errors.New("ark api url or bot id is empty")
+		}
+		requestBody := ArkBotRequestBody{Input: ArkInput{Messages: msg}}
+		arkResp := &ArkBotResponseBody{}
+		endpoint := gpt.ArkApiUrl + "/" + gpt.ArkBotId + "/completions"
+		err = gpt.sendRequestWithBodyType(endpoint, "POST", jsonBody, requestBody, arkResp)
+		if err == nil && len(arkResp.Output.Choices) > 0 {
+			return arkResp.Output.Choices[0].Message, nil
+		}
+		return Messages{}, errors.New("ark bots 请求失败")
+	}
+
 	requestBody := ChatGPTRequestBody{
-		Model:       engine,
-		Messages:    msg,
-		MaxTokens:   maxTokens,
+		Model:     engine,
+		Messages:  msg,
+		MaxTokens: maxTokens,
 	}
 	gptResponseBody := &ChatGPTResponseBody{}
 	err = gpt.sendRequestWithBodyType(gpt.ApiUrl+"/chat/completions", "POST",

@@ -17,3 +17,11 @@ KEY_FILE: key.pem
 API_URL: https://api.openai.com
 # 代理设置, 例如 "http://127.0.0.1:7890", ""代表不使用代理
 HTTP_PROXY: ""
+# 模型服务提供商: openai 或 ark
+PROVIDER: openai
+# 当 PROVIDER=ark 时生效
+ARK_API_KEY: ""
+# Ark Bots v3 基础地址
+ARK_API_URL: https://ark.cn-beijing.volces.com/api/v3/bots
+# Ark Bot ID，例如: bot-20250818113927-59bfm
+ARK_BOT_ID: ""

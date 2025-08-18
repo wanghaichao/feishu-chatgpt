@@ -28,3 +28,9 @@ services:
       - API_URL=https://api.openai.com
       # 代理设置, 例如 - HTTP_PROXY=http://127.0.0.1:7890, 默认代表不使用代理
       - HTTP_PROXY
+      # Provider 切换: openai 或 ark
+      - PROVIDER=openai
+      # 当 PROVIDER=ark 时生效
+      # - ARK_API_KEY=ak-xxxxxxx
+      # - ARK_API_URL=https://ark.cn-beijing.volces.com/api/v3/bots
+      # - ARK_BOT_ID=bot-20250818113927-59bfm

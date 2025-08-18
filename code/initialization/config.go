@@ -3,7 +3,6 @@ package initialization
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -23,6 +22,12 @@ type Config struct {
 	KeyFile                    string
 	OpenaiApiUrl               string
 	HttpProxy                  string
+	// provider switch: "openai" (default) or "ark"
+	Provider string
+	// Ark (Volcengine Ark Bots) configurations
+	ArkApiKey string
+	ArkApiUrl string
+	ArkBotId  string
 }
 
 func LoadConfig(cfg string) *Config {
@@ -49,6 +54,10 @@ func LoadConfig(cfg string) *Config {
 		KeyFile:                    getViperStringValue("KEY_FILE", "key.pem"),
 		OpenaiApiUrl:               getViperStringValue("API_URL", "https://api.openai.com/v1"),
 		HttpProxy:                  getViperStringValue("HTTP_PROXY", ""),
+		Provider:                   getViperStringValue("PROVIDER", "openai"),
+		ArkApiKey:                  getViperStringValue("ARK_API_KEY", ""),
+		ArkApiUrl:                  getViperStringValue("ARK_API_URL", "https://ark.cn-beijing.volces.com/api/v3/bots"),
+		ArkBotId:                   getViperStringValue("ARK_BOT_ID", ""),
 	}
 
 	return config
@@ -62,41 +71,43 @@ func getViperStringValue(key string, defaultValue string) string {
 	return value
 }
 
-//OPENAI_KEY: sk-xxx,sk-xxx,sk-xxx
-//result:[sk-xxx sk-xxx sk-xxx]
+// OPENAI_KEY: sk-xxx,sk-xxx,sk-xxx
+// result:[sk-xxx sk-xxx sk-xxx]
 func getViperStringArray(key string, defaultValue []string) []string {
-	value := viper.GetString(key)
-	if value == "" {
-		return defaultValue
+	// 优先读取以逗号分隔的环境变量
+	if envVal := os.Getenv(key); envVal != "" {
+		parts := strings.Split(envVal, ",")
+		var trimmed []string
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				trimmed = append(trimmed, p)
+			}
+		}
+		if len(trimmed) > 0 {
+			return trimmed
+		}
 	}
-	raw := strings.Split(value, ",")
-	return filterFormatKey(raw)
+	// 其次读取配置文件中的数组
+	if v := viper.GetStringSlice(key); len(v) > 0 {
+		return v
+	}
+	return defaultValue
 }
 
 func getViperIntValue(key string, defaultValue int) int {
-	value := viper.GetString(key)
-	if value == "" {
+	value := viper.GetInt(key)
+	if value == 0 {
 		return defaultValue
 	}
-	intValue, err := strconv.Atoi(value)
-	if err != nil {
-		fmt.Printf("Invalid value for %s, using default value %d\n", key, defaultValue)
-		return defaultValue
-	}
-	return intValue
+	return value
 }
 
 func getViperBoolValue(key string, defaultValue bool) bool {
-	value := viper.GetString(key)
-	if value == "" {
+	if !viper.IsSet(key) {
 		return defaultValue
 	}
-	boolValue, err := strconv.ParseBool(value)
-	if err != nil {
-		fmt.Printf("Invalid value for %s, using default value %v\n", key, defaultValue)
-		return defaultValue
-	}
-	return boolValue
+	return viper.GetBool(key)
 }
 
 func (config *Config) GetCertFile() string {
