@@ -47,7 +47,7 @@ func LoadConfig(cfg string) *Config {
 		UseHttps:                   getViperBoolValue("USE_HTTPS", false),
 		CertFile:                   getViperStringValue("CERT_FILE", "cert.pem"),
 		KeyFile:                    getViperStringValue("KEY_FILE", "key.pem"),
-		OpenaiApiUrl:               getViperStringValue("API_URL", "https://api.openai.com/v1"),
+		OpenaiApiUrl:               getViperStringValue("API_URL", "https://ark.cn-beijing.volces.com/api/v3/bots"),
 		HttpProxy:                  getViperStringValue("HTTP_PROXY", ""),
 	}
 
