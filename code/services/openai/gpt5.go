@@ -2,6 +2,8 @@ package openai
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 )
 
 const (
@@ -57,7 +59,11 @@ func (gpt ChatGPT) Completions(msg []Messages) (resp Messages, err error) {
 		}
 		requestBody := ArkBotRequestBody{Input: ArkInput{Messages: msg}}
 		arkResp := &ArkBotResponseBody{}
-		endpoint := gpt.ArkApiUrl + "/" + gpt.ArkBotId + "/completions"
+		base := strings.TrimRight(gpt.ArkApiUrl, "/")
+		if !strings.Contains(base, "/bots") {
+			base = base + "/bots"
+		}
+		endpoint := fmt.Sprintf("%s/%s/chat/completions", base, gpt.ArkBotId)
 		err = gpt.sendRequestWithBodyType(endpoint, "POST", jsonBody, requestBody, arkResp)
 		if err == nil && len(arkResp.Output.Choices) > 0 {
 			return arkResp.Output.Choices[0].Message, nil
