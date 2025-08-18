@@ -35,6 +35,8 @@ type ChatGPT struct {
 	ArkApiKey string
 	ArkApiUrl string
 	ArkBotId  string
+	// debug
+	DebugHTTP bool
 }
 
 type requestBodyType int
@@ -125,17 +127,27 @@ func (gpt ChatGPT) doAPIRequestWithRetry(url, method string, bodyType requestBod
 		req.Header.Set("OpenAI-Beta", "assistants=v2")
 	}
 
+	if gpt.DebugHTTP {
+		// redact token
+		redactedAuth := req.Header.Get("Authorization")
+		if redactedAuth != "" {
+			redactedAuth = "Bearer ****"
+		}
+		fmt.Printf("[HTTP] %s %s\nHeaders: Content-Type=%s, Authorization=%s\nBody: %s\n",
+			method, url, req.Header.Get("Content-Type"), redactedAuth, string(requestBodyData))
+	}
+
 	var response *http.Response
 	var retry int
 	for retry = 0; retry <= maxRetries; retry++ {
 		response, err = client.Do(req)
-		//fmt.Println("--------------------")
-		//fmt.Println("req", req.Header)
-		//fmt.Printf("response: %v", response)
 		// read body
 		if err != nil || response.StatusCode < 200 || response.StatusCode >= 300 {
 
 			body, _ := ioutil.ReadAll(response.Body)
+			if gpt.DebugHTTP {
+				fmt.Printf("[HTTP] Response status=%d, body=%s\n", response.StatusCode, string(body))
+			}
 			fmt.Println("body", string(body))
 			fmt.Printf("API请求失败，状态码：%d，响应体：%s\n", response.StatusCode, string(body))
 
@@ -161,6 +173,9 @@ func (gpt ChatGPT) doAPIRequestWithRetry(url, method string, bodyType requestBod
 	body, err := ioutil.ReadAll(response.Body)
 	if err != nil {
 		return err
+	}
+	if gpt.DebugHTTP {
+		fmt.Printf("[HTTP] Response OK status=%d, body=%s\n", response.StatusCode, string(body))
 	}
 
 	err = json.Unmarshal(body, responseBody)
@@ -214,5 +229,6 @@ func NewChatGPT(config initialization.Config) *ChatGPT {
 		ArkApiKey: config.ArkApiKey,
 		ArkApiUrl: config.ArkApiUrl,
 		ArkBotId:  config.ArkBotId,
+		DebugHTTP: config.DebugHTTP,
 	}
 }

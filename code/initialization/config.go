@@ -28,6 +28,8 @@ type Config struct {
 	ArkApiKey string
 	ArkApiUrl string
 	ArkBotId  string
+	// debug http request/response logs
+	DebugHTTP bool
 }
 
 func LoadConfig(cfg string) *Config {
@@ -58,6 +60,7 @@ func LoadConfig(cfg string) *Config {
 		ArkApiKey:                  getViperStringValue("ARK_API_KEY", ""),
 		ArkApiUrl:                  getViperStringValue("ARK_API_URL", "https://ark.cn-beijing.volces.com/api/v3/bots"),
 		ArkBotId:                   getViperStringValue("ARK_BOT_ID", ""),
+		DebugHTTP:                  getViperBoolValue("DEBUG_HTTP", false),
 	}
 
 	return config

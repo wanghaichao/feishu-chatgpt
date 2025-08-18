@@ -63,7 +63,7 @@ func (gpt ChatGPT) Completions(msg []Messages) (resp Messages, err error) {
 		if !strings.Contains(base, "/bots") {
 			base = base + "/bots"
 		}
-		endpoint := fmt.Sprintf("%s/%s/chat/completions", base, gpt.ArkBotId)
+		endpoint := fmt.Sprintf("%s/chat/completions", base)
 		err = gpt.sendRequestWithBodyType(endpoint, "POST", jsonBody, requestBody, arkResp)
 		if err == nil && len(arkResp.Output.Choices) > 0 {
 			return arkResp.Output.Choices[0].Message, nil

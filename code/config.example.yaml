@@ -25,3 +25,5 @@ ARK_API_KEY: ""
 ARK_API_URL: https://ark.cn-beijing.volces.com/api/v3/bots
 # Ark Bot ID，例如: bot-20250818113927-59bfm
 ARK_BOT_ID: ""
+# 调试HTTP请求/响应日志，默认 false
+DEBUG_HTTP: false
