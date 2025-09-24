@@ -6,6 +6,7 @@ import (
 	"start-feishubot/initialization"
 	"start-feishubot/services/openai"
 	"start-feishubot/utils"
+	"strings"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
@@ -154,15 +155,37 @@ func (*AutoSearchAction) Execute(a *ActionInfo) bool {
 	}
 	var ctxText string
 	var err error
-	fmt.Printf("[WebSearch] %s\n", a.info.qParsed)
+	// derive search query by stripping trigger keywords; fallback to last user message
+	searchQuery := a.info.qParsed
+	if a.handler.config.SearchOnlyOnKeywords {
+		kws := a.handler.config.SearchKeywords
+		for _, kw := range kws {
+			searchQuery = strings.ReplaceAll(searchQuery, kw, "")
+		}
+		searchQuery = strings.TrimSpace(searchQuery)
+		if searchQuery == "" {
+			// fallback to last user message in session history
+			hist := a.handler.sessionCache.GetMsg(*a.info.sessionId)
+			for i := len(hist) - 1; i >= 0; i-- {
+				if hist[i].Role == "user" && strings.TrimSpace(hist[i].Content) != "" {
+					searchQuery = strings.TrimSpace(hist[i].Content)
+					break
+				}
+			}
+			if searchQuery == "" {
+				searchQuery = a.info.qParsed
+			}
+		}
+	}
+	fmt.Printf("[WebSearch] %s\n", searchQuery)
 	if a.handler.config.GoogleApiKey != "" && a.handler.config.GoogleCSEId != "" {
-		ctxText, err = utils.BuildGoogleSearchContext(a.info.qParsed, a.handler.config.GoogleApiKey, a.handler.config.GoogleCSEId, a.handler.config.SearchTopK)
+		ctxText, err = utils.BuildGoogleSearchContext(searchQuery, a.handler.config.GoogleApiKey, a.handler.config.GoogleCSEId, a.handler.config.SearchTopK)
 		if err != nil {
 			// fallback to DuckDuckGo when Google fails (e.g., quota exceeded)
-			ctxText, err = utils.BuildSearchContext(a.info.qParsed, a.handler.config.SearchTopK)
+			ctxText, err = utils.BuildSearchContext(searchQuery, a.handler.config.SearchTopK)
 		}
 	} else {
-		ctxText, err = utils.BuildSearchContext(a.info.qParsed, a.handler.config.SearchTopK)
+		ctxText, err = utils.BuildSearchContext(searchQuery, a.handler.config.SearchTopK)
 	}
 	if err != nil {
 		// soft-fail: continue to normal flow
