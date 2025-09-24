@@ -157,6 +157,10 @@ func (*AutoSearchAction) Execute(a *ActionInfo) bool {
 	fmt.Printf("[WebSearch] %s\n", a.info.qParsed)
 	if a.handler.config.GoogleApiKey != "" && a.handler.config.GoogleCSEId != "" {
 		ctxText, err = utils.BuildGoogleSearchContext(a.info.qParsed, a.handler.config.GoogleApiKey, a.handler.config.GoogleCSEId, a.handler.config.SearchTopK)
+		if err != nil {
+			// fallback to DuckDuckGo when Google fails (e.g., quota exceeded)
+			ctxText, err = utils.BuildSearchContext(a.info.qParsed, a.handler.config.SearchTopK)
+		}
 	} else {
 		ctxText, err = utils.BuildSearchContext(a.info.qParsed, a.handler.config.SearchTopK)
 	}
