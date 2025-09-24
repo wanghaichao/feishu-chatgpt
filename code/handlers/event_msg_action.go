@@ -8,6 +8,13 @@ import (
 	"strings"
 )
 
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 type MessageAction struct { /*消息*/
 }
 
@@ -83,10 +90,18 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 			if q == "" {
 				continue
 			}
+			fmt.Printf("[Web Search] Query %d: %s\n", i+1, q)
 			ctx, err := utils.BuildSearchContext(q, 3)
-			if err != nil || strings.TrimSpace(ctx) == "" {
+			if err != nil {
+				fmt.Printf("[Web Search] Query %d failed: %v\n", i+1, err)
 				continue
 			}
+			if strings.TrimSpace(ctx) == "" {
+				fmt.Printf("[Web Search] Query %d returned empty context\n", i+1)
+				continue
+			}
+			fmt.Printf("[Web Search] Query %d context length: %d chars\n", i+1, len(ctx))
+			fmt.Printf("[Web Search] Query %d context preview: %s...\n", i+1, ctx[:min(200, len(ctx))])
 			ctxParts = append(ctxParts, fmt.Sprintf("{\"query\": %q, \"sources\": %s}", q, ctx))
 		}
 		fmt.Println("[Second Stage] built contexts:", len(ctxParts))
@@ -115,6 +130,8 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 		}
 		// 组合检索上下文为 JSON 数组字符串
 		contextJSON := "[" + strings.Join(ctxParts, ",") + "]"
+		fmt.Printf("[Second Stage] Final context JSON length: %d chars\n", len(contextJSON))
+		fmt.Printf("[Second Stage] Final context JSON preview: %s...\n", contextJSON[:min(500, len(contextJSON))])
 		// 构建二次提问消息，携带检索资料
 		webSystem := openai.Messages{Role: "system", Content: "你是一个联网助手。根据给定的检索资料（JSON 数组，含 query 与 sources 列表，每个 source 有 title、url、content），请严谨回答用户问题：\n- 仅使用资料中能够支持的事实；\n- 不确定时明确说明不确定；\n- 在内容末尾列出引用的网址列表。"}
 		userWithCtx := openai.Messages{Role: "user", Content: fmt.Sprintf("用户问题：%s\n检索资料(JSON)：%s", a.info.qParsed, contextJSON)}
