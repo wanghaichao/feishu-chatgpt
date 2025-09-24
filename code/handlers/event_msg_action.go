@@ -33,6 +33,8 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 			"🤖️：消息机器人摆烂了，请稍后再试～\n错误信息: %v", err), a.info.msgId)
 		return false
 	}
+	// debug: print first-stage raw output
+	fmt.Println("[OpenAI First] raw:", clsResp.Content)
 
 	var decision webDecision
 	if err := json.Unmarshal([]byte(clsResp.Content), &decision); err != nil {
@@ -43,6 +45,8 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 			replyMsg(*a.ctx, fmt.Sprintf("🤖️：消息机器人摆烂了，请稍后再试～\n错误信息: %v", err2), a.info.msgId)
 			return false
 		}
+		// debug: print single-shot raw output
+		fmt.Println("[OpenAI Single] raw:", completions.Content)
 		// append to history as final answer
 		msg = append(msg, completions)
 		a.handler.sessionCache.SetMsg(*a.info.sessionId, msg)
@@ -57,6 +61,9 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 		}
 		return true
 	}
+	if b, _ := json.Marshal(decision); len(b) > 0 {
+		fmt.Println("[Decision JSON]:", string(b))
+	}
 
 	if decision.NeedWeb {
 		// Step 2: 自动触发检索与二次回答
@@ -64,6 +71,7 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 		if len(queries) == 0 {
 			queries = []string{a.info.qParsed}
 		}
+		fmt.Println("[Second Stage Triggered] queries:", queries)
 		// 最多取前三条查询，分别构建搜索上下文
 		maxQ := 3
 		if len(queries) < maxQ {
@@ -81,6 +89,7 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 			}
 			ctxParts = append(ctxParts, fmt.Sprintf("{\"query\": %q, \"sources\": %s}", q, ctx))
 		}
+		fmt.Println("[Second Stage] built contexts:", len(ctxParts))
 		if len(ctxParts) == 0 {
 			// 无法拿到上下文，退化为提示 queries
 			var payload string
@@ -90,6 +99,7 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 			} else {
 				payload = "需要联网检索，但暂未获取到有效资料。请稍后重试。"
 			}
+			fmt.Println("[Second Stage] no context, reply with queries")
 			finalHistory := append(history, openai.Messages{Role: "user", Content: a.info.qParsed})
 			finalHistory = append(finalHistory, openai.Messages{Role: "assistant", Content: payload})
 			a.handler.sessionCache.SetMsg(*a.info.sessionId, finalHistory)
@@ -115,6 +125,8 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 			replyMsg(*a.ctx, fmt.Sprintf("🤖️：消息机器人摆烂了，请稍后再试～\n错误信息: %v", err), a.info.msgId)
 			return false
 		}
+		// debug: print second-stage raw output
+		fmt.Println("[OpenAI Second] raw:", finalResp.Content)
 		finalHistory := append(history, openai.Messages{Role: "user", Content: a.info.qParsed})
 		finalHistory = append(finalHistory, openai.Messages{Role: "assistant", Content: finalResp.Content})
 		a.handler.sessionCache.SetMsg(*a.info.sessionId, finalHistory)
@@ -139,6 +151,8 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 			replyMsg(*a.ctx, fmt.Sprintf("🤖️：消息机器人摆烂了，请稍后再试～\n错误信息: %v", err2), a.info.msgId)
 			return false
 		}
+		// debug: print direct-fallback raw output
+		fmt.Println("[OpenAI Direct Fallback] raw:", completions.Content)
 		msg = append(msg, completions)
 		a.handler.sessionCache.SetMsg(*a.info.sessionId, msg)
 		if len(msg) == 2 {
@@ -151,6 +165,8 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 		}
 		return true
 	}
+	// debug: print direct answer
+	fmt.Println("[OpenAI Direct Answer]:", answer)
 
 	// Append assistant answer to history and reply
 	finalHistory := append(history, openai.Messages{Role: "user", Content: a.info.qParsed})
