@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"html"
@@ -10,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -33,6 +35,38 @@ func FetchURLAsPlainText(rawURL string) (string, error) {
 	}
 
 	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequest("GET", readerURL, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", errors.New("failed to fetch url: " + resp.Status)
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+// FetchURLAsPlainTextWithTimeout is like FetchURLAsPlainText but allows a custom timeout
+func FetchURLAsPlainTextWithTimeout(rawURL string, timeout time.Duration) (string, error) {
+	cleaned := strings.TrimSpace(rawURL)
+	if cleaned == "" {
+		return "", errors.New("empty url")
+	}
+	var readerURL string
+	if strings.HasPrefix(cleaned, "http://") || strings.HasPrefix(cleaned, "https://") {
+		readerURL = "https://r.jina.ai/" + cleaned
+	} else {
+		readerURL = "https://r.jina.ai/https://" + cleaned
+	}
+	client := &http.Client{Timeout: timeout}
 	req, err := http.NewRequest("GET", readerURL, nil)
 	if err != nil {
 		return "", err
@@ -135,7 +169,40 @@ func WebSearch(query string, topK int) ([]SearchResult, error) {
 }
 
 // BuildSearchContext downloads topK results and returns a concatenated context string.
+// simple cache for search contexts
+type cacheEntry struct {
+	value     string
+	expiresAt time.Time
+}
+
+var (
+	searchCtxCacheMu sync.Mutex
+	searchCtxCache   = make(map[string]cacheEntry)
+)
+
+func getCachedContext(key string) (string, bool) {
+	searchCtxCacheMu.Lock()
+	defer searchCtxCacheMu.Unlock()
+	if e, ok := searchCtxCache[key]; ok {
+		if time.Now().Before(e.expiresAt) {
+			return e.value, true
+		}
+		delete(searchCtxCache, key)
+	}
+	return "", false
+}
+
+func setCachedContext(key, val string, ttl time.Duration) {
+	searchCtxCacheMu.Lock()
+	searchCtxCache[key] = cacheEntry{value: val, expiresAt: time.Now().Add(ttl)}
+	searchCtxCacheMu.Unlock()
+}
+
+// BuildSearchContext builds context by concurrently fetching topK results with timeouts and cache
 func BuildSearchContext(query string, topK int) (string, error) {
+	if v, ok := getCachedContext("ddg:" + query); ok {
+		return v, nil
+	}
 	results, err := WebSearch(query, topK)
 	if err != nil {
 		return "", err
@@ -145,19 +212,57 @@ func BuildSearchContext(query string, topK int) (string, error) {
 		URL     string `json:"url"`
 		Content string `json:"content"`
 	}
+	// concurrency control
+	if topK <= 0 {
+		topK = 3
+	}
+	maxConcurrency := topK
+	if maxConcurrency > 4 { // cap to reduce burst
+		maxConcurrency = 4
+	}
+	sem := make(chan struct{}, maxConcurrency)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
 	var items []item
+
+	// overall timeout
+	overallCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	perFetchTimeout := 6 * time.Second
 	for _, r := range results {
-		content, err := FetchURLAsPlainText(r.URL)
-		if err != nil {
+		r := r
+		wg.Add(1)
+		if overallCtx.Err() != nil {
+			wg.Done()
 			continue
 		}
-		items = append(items, item{Title: r.Title, URL: r.URL, Content: content})
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			// per fetch timeout
+			content, err := FetchURLAsPlainTextWithTimeout(r.URL, perFetchTimeout)
+			if err != nil || content == "" {
+				return
+			}
+			// trim to reduce tokens
+			if len(content) > 4000 {
+				content = content[:4000]
+			}
+			mu.Lock()
+			items = append(items, item{Title: r.Title, URL: r.URL, Content: content})
+			mu.Unlock()
+		}()
 	}
+	wg.Wait()
 	if len(items) == 0 {
 		return "", errors.New("no accessible results")
 	}
 	b, _ := json.Marshal(items)
-	return string(b), nil
+	out := string(b)
+	setCachedContext("ddg:"+query, out, 5*time.Minute)
+	return out, nil
 }
 
 // Google CSE search
@@ -239,6 +344,9 @@ func GoogleSearch(query, apiKey, cseId string, topK int) ([]SearchResult, error)
 
 // BuildGoogleSearchContext uses Google CSE to find results and then fetches their content via reader
 func BuildGoogleSearchContext(query, apiKey, cseId string, topK int) (string, error) {
+	if v, ok := getCachedContext("g:" + query); ok {
+		return v, nil
+	}
 	results, err := GoogleSearch(query, apiKey, cseId, topK)
 	if err != nil {
 		return "", err
@@ -249,21 +357,49 @@ func BuildGoogleSearchContext(query, apiKey, cseId string, topK int) (string, er
 		Snippet string `json:"snippet,omitempty"`
 		Content string `json:"content"`
 	}
+	if topK <= 0 {
+		topK = 3
+	}
+	maxConcurrency := topK
+	if maxConcurrency > 4 {
+		maxConcurrency = 4
+	}
+	sem := make(chan struct{}, maxConcurrency)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
 	var items []item
+	overallCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	perFetchTimeout := 6 * time.Second
 	for _, r := range results {
-		content, err := FetchURLAsPlainText(r.URL)
-		if err != nil {
+		r := r
+		wg.Add(1)
+		if overallCtx.Err() != nil {
+			wg.Done()
 			continue
 		}
-		// trim very long content to reduce token waste
-		content = trimTo(content, 4000)
-		items = append(items, item{Title: r.Title, URL: r.URL, Snippet: r.Snippet, Content: content})
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			content, err := FetchURLAsPlainTextWithTimeout(r.URL, perFetchTimeout)
+			if err != nil || content == "" {
+				return
+			}
+			content = trimTo(content, 4000)
+			mu.Lock()
+			items = append(items, item{Title: r.Title, URL: r.URL, Snippet: r.Snippet, Content: content})
+			mu.Unlock()
+		}()
 	}
+	wg.Wait()
 	if len(items) == 0 {
 		return "", errors.New("no accessible results")
 	}
 	b, _ := json.Marshal(items)
-	return string(b), nil
+	out := string(b)
+	setCachedContext("g:"+query, out, 5*time.Minute)
+	return out, nil
 }
 
 // helpers

@@ -34,6 +34,14 @@ type Config struct {
 	SearchAlways bool
 	// Number of top results to read
 	SearchTopK int
+	// Search behavior options
+	SearchOverallTimeoutSec  int
+	SearchPerFetchTimeoutSec int
+	SearchMaxConcurrency     int
+	SearchCacheTTLMin        int
+	// Trigger control
+	SearchOnlyOnKeywords bool
+	SearchKeywords       []string
 	// Google Custom Search API key
 	GoogleApiKey string
 	// Google Custom Search Engine ID (cx)
@@ -71,6 +79,12 @@ func LoadConfig(cfg string) *Config {
 		DebugHTTP:                  getViperBoolValue("DEBUG_HTTP", true),
 		SearchAlways:               getViperBoolValue("SEARCH_ALWAYS", true),
 		SearchTopK:                 getViperIntValue("SEARCH_TOPK", 3),
+		SearchOverallTimeoutSec:    getViperIntValue("SEARCH_OVERALL_TIMEOUT_SEC", 10),
+		SearchPerFetchTimeoutSec:   getViperIntValue("SEARCH_PER_FETCH_TIMEOUT_SEC", 6),
+		SearchMaxConcurrency:       getViperIntValue("SEARCH_MAX_CONCURRENCY", 4),
+		SearchCacheTTLMin:          getViperIntValue("SEARCH_CACHE_TTL_MIN", 5),
+		SearchOnlyOnKeywords:       getViperBoolValue("SEARCH_ONLY_ON_KEYWORDS", true),
+		SearchKeywords:             getViperStringArray("SEARCH_KEYWORDS", []string{"/read", "联网", "上网", "google", "谷歌", "搜索", "查一下", "最新", "实时"}),
 		GoogleApiKey:               getViperStringValue("GOOGLE_API_KEY", ""),
 		GoogleCSEId:                getViperStringValue("GOOGLE_CSE_ID", ""),
 	}
