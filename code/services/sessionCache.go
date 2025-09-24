@@ -84,7 +84,17 @@ func (s *SessionService) SetMsg(sessionId string, msg []openai.Messages) {
 
 	//限制对话上下文长度
 	for getStrPoolTotalLength(msg) > maxLength {
-		msg = append(msg[:1], msg[2:]...)
+		// Prefer to keep the first message (often system) and drop the earliest pair
+		if len(msg) > 2 {
+			msg = append(msg[:1], msg[2:]...)
+			continue
+		}
+		// If not enough to drop a pair, drop from the head safely
+		if len(msg) > 0 {
+			msg = msg[1:]
+		} else {
+			break
+		}
 	}
 
 	sessionContext, ok := s.cache.Get(sessionId)
