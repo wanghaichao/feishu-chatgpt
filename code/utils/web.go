@@ -91,7 +91,7 @@ func WebSearch(query string, topK int) ([]SearchResult, error) {
 
 	// Extract <a class="result__a" href="...">Title</a>
 	anchorRe := regexp.MustCompile(`<a[^>]*class=\"result__a\"[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>`)
-	fmt.Printf("[WebSearchresultsanchorRe] %s", anchorRe)
+	fmt.Printf("[WebSearchresultsanchorRe] %s", htmlStr)
 	matches := anchorRe.FindAllStringSubmatch(htmlStr, -1)
 	var results []SearchResult
 	for _, m := range matches {
