@@ -69,7 +69,7 @@ func LoadConfig(cfg string) *Config {
 		ArkApiUrl:                  getViperStringValue("ARK_API_URL", "https://ark.cn-beijing.volces.com/api/v3/bots"),
 		ArkBotId:                   getViperStringValue("ARK_BOT_ID", ""),
 		DebugHTTP:                  getViperBoolValue("DEBUG_HTTP", true),
-		SearchAlways:               getViperBoolValue("SEARCH_ALWAYS", false),
+		SearchAlways:               getViperBoolValue("SEARCH_ALWAYS", true),
 		SearchTopK:                 getViperIntValue("SEARCH_TOPK", 3),
 		GoogleApiKey:               getViperStringValue("GOOGLE_API_KEY", ""),
 		GoogleCSEId:                getViperStringValue("GOOGLE_CSE_ID", ""),
