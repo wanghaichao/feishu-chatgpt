@@ -92,14 +92,10 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 				continue
 			}
 			fmt.Printf("[Web Search] Query %d: %s\n", i+1, q)
-			if a.handler.config.GoogleApiKey != "" && a.handler.config.GoogleCSEId != "" {
-				ctx, err = utils.BuildGoogleSearchContext(q, a.handler.config.GoogleApiKey, a.handler.config.GoogleCSEId, a.handler.config.SearchTopK)
-				if err != nil {
-					// fallback to DuckDuckGo when Google fails (e.g., quota exceeded)
-					ctxText, err = utils.BuildSearchContext(q, a.handler.config.SearchTopK)
-				}
-			} else {
-				ctx, err = utils.BuildSearchContext(q, a.handler.config.SearchTopK)
+			ctx, err := utils.BuildGoogleSearchContext(q, a.handler.config.GoogleApiKey, a.handler.config.GoogleCSEId, 3)
+			if err != nil {
+				fmt.Printf("[Web Search] Query %d failed: %v\n", i+1, err)
+				continue
 			}
 			if strings.TrimSpace(ctx) == "" {
 				fmt.Printf("[Web Search] Query %d returned empty context\n", i+1)
