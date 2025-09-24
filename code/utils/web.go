@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html"
 	"io/ioutil"
 	"net/http"
@@ -106,24 +107,29 @@ func WebSearch(query string, topK int) ([]SearchResult, error) {
 		topK = 3
 	} // Fetch DuckDuckGo lite HTML directly and parse anchors
 	duckURL := "https://duckduckgo.com/html/?q=" + url.QueryEscape(q)
+	fmt.Printf("[WebSearch] Searching URL: %s\n", duckURL)
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, _ := http.NewRequest("GET", duckURL, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0 Safari/537.36")
 	resp, err := client.Do(req)
 	if err != nil {
+		fmt.Printf("[WebSearch] HTTP request failed: %v\n", err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		fmt.Printf("[WebSearch] HTTP status failed: %s\n", resp.Status)
 		return nil, errors.New("duckduckgo html failed: " + resp.Status)
 	}
 	body, _ := ioutil.ReadAll(resp.Body)
 	htmlStr := string(body)
+	fmt.Printf("[WebSearch] Got HTML response, length: %d chars\n", len(htmlStr))
 
 	// Extract <a class="result__a" href="...">Title</a>
 	// Be tolerant to attribute order and both quote styles
 	anchorRe := regexp.MustCompile(`<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>`)
 	matches := anchorRe.FindAllStringSubmatch(htmlStr, -1)
+	fmt.Printf("[WebSearch] Found %d regex matches\n", len(matches))
 	var results []SearchResult
 	for _, m := range matches {
 		if len(m) < 3 {
@@ -162,7 +168,9 @@ func WebSearch(query string, topK int) ([]SearchResult, error) {
 			break
 		}
 	}
+	fmt.Printf("[WebSearch] Final results count: %d\n", len(results))
 	if len(results) == 0 {
+		fmt.Printf("[WebSearch] No valid results found, returning error\n")
 		return nil, errors.New("no results")
 	}
 	return results, nil
