@@ -133,8 +133,6 @@ func (gpt ChatGPT) doAPIRequestWithRetry(url, method string, bodyType requestBod
 		if redactedAuth != "" {
 			redactedAuth = "Bearer ****"
 		}
-		fmt.Printf("[HTTP] %s %s\nHeaders: Content-Type=%s, Authorization=%s\nBody: %s\n",
-			method, url, req.Header.Get("Content-Type"), redactedAuth, string(requestBodyData))
 	}
 
 	var response *http.Response
