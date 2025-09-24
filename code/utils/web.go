@@ -6,6 +6,8 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -51,8 +53,9 @@ func FetchURLAsPlainText(rawURL string) (string, error) {
 
 // SearchResult represents a single search result
 type SearchResult struct {
-	Title string `json:"title"`
-	URL   string `json:"url"`
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Snippet string `json:"snippet,omitempty"`
 }
 
 // WebSearch performs a web search using DuckDuckGo's HTML endpoint via Jina Reader aggregator API.
@@ -156,7 +159,24 @@ func GoogleSearch(query, apiKey, cseId string, topK int) ([]SearchResult, error)
 	q.Set("key", apiKey)
 	q.Set("cx", cseId)
 	q.Set("q", query)
-	q.Set("num", "10")
+	// increase candidates to improve recall
+	want := topK * 3
+	if want < topK {
+		want = topK
+	}
+	if want > 10 {
+		want = 10
+	}
+	q.Set("num", strconv.Itoa(want))
+	// language/region hints
+	if containsChinese(query) {
+		q.Set("hl", "zh-CN")
+		q.Set("gl", "CN")
+		q.Set("lr", "lang_zh-CN")
+	} else {
+		q.Set("hl", "en")
+		q.Set("gl", "US")
+	}
 	u.RawQuery = q.Encode()
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -179,7 +199,7 @@ func GoogleSearch(query, apiKey, cseId string, topK int) ([]SearchResult, error)
 		if it.Link == "" {
 			continue
 		}
-		out = append(out, SearchResult{Title: it.Title, URL: it.Link})
+		out = append(out, SearchResult{Title: it.Title, URL: it.Link, Snippet: it.Snippet})
 		if len(out) >= topK {
 			break
 		}
@@ -199,6 +219,7 @@ func BuildGoogleSearchContext(query, apiKey, cseId string, topK int) (string, er
 	type item struct {
 		Title   string `json:"title"`
 		URL     string `json:"url"`
+		Snippet string `json:"snippet,omitempty"`
 		Content string `json:"content"`
 	}
 	var items []item
@@ -207,11 +228,27 @@ func BuildGoogleSearchContext(query, apiKey, cseId string, topK int) (string, er
 		if err != nil {
 			continue
 		}
-		items = append(items, item{Title: r.Title, URL: r.URL, Content: content})
+		// trim very long content to reduce token waste
+		content = trimTo(content, 4000)
+		items = append(items, item{Title: r.Title, URL: r.URL, Snippet: r.Snippet, Content: content})
 	}
 	if len(items) == 0 {
 		return "", errors.New("no accessible results")
 	}
 	b, _ := json.Marshal(items)
 	return string(b), nil
+}
+
+// helpers
+func trimTo(s string, n int) string {
+	if n <= 0 || len(s) <= n {
+		return s
+	}
+	return s[:n]
+}
+
+var zhChar = regexp.MustCompile(`[\p{Han}]`)
+
+func containsChinese(s string) bool {
+	return zhChar.MatchString(s)
 }

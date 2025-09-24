@@ -167,8 +167,8 @@ func (*AutoSearchAction) Execute(a *ActionInfo) bool {
 		return true
 	}
 	msgs := a.handler.sessionCache.GetMsg(*a.info.sessionId)
-	msgs = append(msgs, openai.Messages{Role: "system", Content: "以下是来自网络搜索的资料(JSON)：\n" + ctxText})
-	msgs = append(msgs, openai.Messages{Role: "user", Content: "请结合资料回答用户问题：\n" + a.info.qParsed})
+	msgs = append(msgs, openai.Messages{Role: "system", Content: "以下是网络搜索的结果(JSON，包含标题、摘要、URL、内容片段)。请核对来源并据此回答。\n" + ctxText})
+	msgs = append(msgs, openai.Messages{Role: "user", Content: "基于上述资料，回答：\n" + a.info.qParsed})
 	completion, err := a.handler.gpt.Completions(msgs)
 	if err != nil {
 		return true
