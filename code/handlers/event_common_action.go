@@ -148,9 +148,6 @@ func (*WebBrowseAction) Execute(a *ActionInfo) bool {
 type AutoSearchAction struct{}
 
 func (*AutoSearchAction) Execute(a *ActionInfo) bool {
-	if !a.handler.config.SearchAlways {
-		return true
-	}
 	// only for text messages
 	if a.info.msgType != "text" {
 		return true
