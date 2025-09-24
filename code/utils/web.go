@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -71,39 +72,54 @@ func WebSearch(query string, topK int) ([]SearchResult, error) {
 	if topK <= 0 {
 		topK = 3
 	}
-	fmt.Printf("[WebSearch] %s", query)
-	// Use DuckDuckGo HTML with no JS
-	// ddg lite: https://duckduckgo.com/html/?q=
+	fmt.Printf("[WebSearch] %s\n", query)
+	// Fetch DuckDuckGo lite HTML directly and parse anchors
 	duckURL := "https://duckduckgo.com/html/?q=" + url.QueryEscape(q)
-	txt, err := FetchURLAsPlainText(duckURL)
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, _ := http.NewRequest("GET", duckURL, nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0 Safari/537.36")
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
-	// crude extraction: find lines with http(s) and a title-like preceding line
-	lines := strings.Split(txt, "\n")
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, errors.New("duckduckgo html failed: " + resp.Status)
+	}
+	body, _ := ioutil.ReadAll(resp.Body)
+	htmlStr := string(body)
+
+	// Extract <a class="result__a" href="...">Title</a>
+	anchorRe := regexp.MustCompile(`<a[^>]*class=\"result__a\"[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>`)
+	matches := anchorRe.FindAllStringSubmatch(htmlStr, -1)
 	var results []SearchResult
-	var lastTitle string
-	for _, line := range lines {
-		l := strings.TrimSpace(line)
-		if l == "" {
+	for _, m := range matches {
+		if len(m) < 3 {
 			continue
 		}
-		if strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "https://") {
-			if !strings.Contains(l, "duckduckgo.com") {
-				results = append(results, SearchResult{Title: lastTitle, URL: l})
-				if len(results) >= topK {
-					break
+		link := html.UnescapeString(m[1])
+		title := html.UnescapeString(stripTags(m[2]))
+		if strings.HasPrefix(link, "/l/?uddg=") {
+			if u, err := url.Parse(link); err == nil {
+				if v := u.Query().Get("uddg"); v != "" {
+					if decoded, err := url.QueryUnescape(v); err == nil {
+						link = decoded
+					}
 				}
 			}
-			lastTitle = ""
+		}
+		if !strings.HasPrefix(link, "http://") && !strings.HasPrefix(link, "https://") {
 			continue
 		}
-		// update possible title
-		if len(l) > 0 && len(l) <= 200 {
-			lastTitle = l
+		if strings.Contains(link, "duckduckgo.com") {
+			continue
+		}
+		results = append(results, SearchResult{Title: title, URL: link})
+		if len(results) >= topK {
+			break
 		}
 	}
-	fmt.Printf("[WebSearchresults] %s", results)
+	fmt.Printf("[WebSearchresults] %d\n", len(results))
 	if len(results) == 0 {
 		return nil, errors.New("no results")
 	}
@@ -254,4 +270,11 @@ var zhChar = regexp.MustCompile(`[\p{Han}]`)
 
 func containsChinese(s string) bool {
 	return zhChar.MatchString(s)
+}
+
+// stripTags removes basic HTML tags from a string
+var tagRe = regexp.MustCompile(`<[^>]+>`)
+
+func stripTags(s string) string {
+	return tagRe.ReplaceAllString(s, "")
 }
