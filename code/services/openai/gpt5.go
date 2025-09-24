@@ -8,7 +8,7 @@ import (
 
 const (
 	maxTokens = 10000
-	engine    = "gpt-5"
+	engine    = "gpt-5-2025-08-07"
 )
 
 // ChatGPTResponseBody 请求体
