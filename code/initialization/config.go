@@ -92,6 +92,16 @@ func LoadConfig(cfg string) *Config {
 	return config
 }
 
+/**
+SEARCH_OVERALL_TIMEOUT_SEC: 总超时（默认 10）
+SEARCH_PER_FETCH_TIMEOUT_SEC: 单页抓取超时（默认 6）
+SEARCH_MAX_CONCURRENCY: 并发抓取上限（默认 4）
+SEARCH_CACHE_TTL_MIN: 搜索上下文缓存分钟数（默认 5）
+SEARCH_ONLY_ON_KEYWORDS: 是否仅在关键词命中时触发（默认 true）
+SEARCH_KEYWORDS: 触发关键词列表（默认 [/read, 联网, 上网, google, 谷歌, 搜索, 查一下, 最新, 实时]）
+其他沿用：SEARCH_ALWAYS、SEARCH_TOPK、GOOGLE_API_KEY、GOOGLE_CSE_ID
+*/
+
 func getViperStringValue(key string, defaultValue string) string {
 	value := viper.GetString(key)
 	if value == "" {
