@@ -153,6 +153,10 @@ func (*AutoSearchAction) Execute(a *ActionInfo) bool {
 	if a.info.msgType != "text" {
 		return true
 	}
+	// respect config: only run when explicitly enabled
+	if !a.handler.config.SearchAlways {
+		return true
+	}
 	var ctxText string
 	var err error
 	// derive search query by stripping trigger keywords; fallback to last user message

@@ -94,7 +94,6 @@ func (m MessageHandler) msgReceivedHandler(ctx context.Context, event *larkim.P2
 		&AudioAction{},           //语音处理
 		&EmptyAction{},           //空消息处理
 		&WebBrowseAction{},       //联网读取
-		&AutoSearchAction{},      //自动联网搜索
 		&ClearAction{},           //清除消息处理
 		&PicAction{},             //图片处理
 		&RoleListAction{},        //角色列表处理
