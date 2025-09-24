@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"start-feishubot/services/openai"
+	"start-feishubot/utils"
+	"strings"
 )
 
 type MessageAction struct { /*消息*/
@@ -57,26 +59,70 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 	}
 
 	if decision.NeedWeb {
-		// Step 1 result: needs web – return key query info
-		// Compose a concise assistant message with queries
-		var payload string
-		if len(decision.Queries) > 0 {
-			// Join queries into bullet-like lines
-			b, _ := json.Marshal(decision.Queries)
-			payload = fmt.Sprintf("需要联网检索。请根据以下关键信息进行查询：\n%s", processNewLine(cleanTextBlock(string(b))))
-		} else {
-			payload = "需要联网检索。请提供更多线索或稍后重试。"
+		// Step 2: 自动触发检索与二次回答
+		queries := decision.Queries
+		if len(queries) == 0 {
+			queries = []string{a.info.qParsed}
 		}
-		// Append assistant message to session as the response
-		finalHistory := append(history, openai.Messages{Role: "user", Content: a.info.qParsed})
-		finalHistory = append(finalHistory, openai.Messages{Role: "assistant", Content: payload})
-		a.handler.sessionCache.SetMsg(*a.info.sessionId, finalHistory)
-		// new topic card if applicable
-		if len(finalHistory) == 2 {
-			sendNewTopicCard(*a.ctx, a.info.sessionId, a.info.msgId, payload)
+		// 最多取前三条查询，分别构建搜索上下文
+		maxQ := 3
+		if len(queries) < maxQ {
+			maxQ = len(queries)
+		}
+		var ctxParts []string
+		for i := 0; i < maxQ; i++ {
+			q := strings.TrimSpace(queries[i])
+			if q == "" {
+				continue
+			}
+			ctx, err := utils.BuildSearchContext(q, 3)
+			if err != nil || strings.TrimSpace(ctx) == "" {
+				continue
+			}
+			ctxParts = append(ctxParts, fmt.Sprintf("{\"query\": %q, \"sources\": %s}", q, ctx))
+		}
+		if len(ctxParts) == 0 {
+			// 无法拿到上下文，退化为提示 queries
+			var payload string
+			if len(decision.Queries) > 0 {
+				b, _ := json.Marshal(decision.Queries)
+				payload = fmt.Sprintf("需要联网检索。请根据以下关键信息进行查询：\n%s", processNewLine(cleanTextBlock(string(b))))
+			} else {
+				payload = "需要联网检索，但暂未获取到有效资料。请稍后重试。"
+			}
+			finalHistory := append(history, openai.Messages{Role: "user", Content: a.info.qParsed})
+			finalHistory = append(finalHistory, openai.Messages{Role: "assistant", Content: payload})
+			a.handler.sessionCache.SetMsg(*a.info.sessionId, finalHistory)
+			if len(finalHistory) == 2 {
+				sendNewTopicCard(*a.ctx, a.info.sessionId, a.info.msgId, payload)
+				return false
+			}
+			if err := replyMsg(*a.ctx, payload, a.info.msgId); err != nil {
+				replyMsg(*a.ctx, fmt.Sprintf("🤖️：消息机器人摆烂了，请稍后再试～\n错误信息: %v", err), a.info.msgId)
+				return false
+			}
+			return true
+		}
+		// 组合检索上下文为 JSON 数组字符串
+		contextJSON := "[" + strings.Join(ctxParts, ",") + "]"
+		// 构建二次提问消息，携带检索资料
+		webSystem := openai.Messages{Role: "system", Content: "你是一个联网助手。根据给定的检索资料（JSON 数组，含 query 与 sources 列表，每个 source 有 title、url、content），请严谨回答用户问题：\n- 仅使用资料中能够支持的事实；\n- 不确定时明确说明不确定；\n- 在内容末尾列出引用的网址列表。"}
+		userWithCtx := openai.Messages{Role: "user", Content: fmt.Sprintf("用户问题：%s\n检索资料(JSON)：%s", a.info.qParsed, contextJSON)}
+		secondMsgs := append(history, webSystem)
+		secondMsgs = append(secondMsgs, userWithCtx)
+		finalResp, err := a.handler.gpt.Completions(secondMsgs)
+		if err != nil {
+			replyMsg(*a.ctx, fmt.Sprintf("🤖️：消息机器人摆烂了，请稍后再试～\n错误信息: %v", err), a.info.msgId)
 			return false
 		}
-		if err := replyMsg(*a.ctx, payload, a.info.msgId); err != nil {
+		finalHistory := append(history, openai.Messages{Role: "user", Content: a.info.qParsed})
+		finalHistory = append(finalHistory, openai.Messages{Role: "assistant", Content: finalResp.Content})
+		a.handler.sessionCache.SetMsg(*a.info.sessionId, finalHistory)
+		if len(finalHistory) == 2 {
+			sendNewTopicCard(*a.ctx, a.info.sessionId, a.info.msgId, finalResp.Content)
+			return false
+		}
+		if err := replyMsg(*a.ctx, finalResp.Content, a.info.msgId); err != nil {
 			replyMsg(*a.ctx, fmt.Sprintf("🤖️：消息机器人摆烂了，请稍后再试～\n错误信息: %v", err), a.info.msgId)
 			return false
 		}
