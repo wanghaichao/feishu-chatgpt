@@ -155,8 +155,10 @@ func (*AutoSearchAction) Execute(a *ActionInfo) bool {
 	var ctxText string
 	var err error
 	if a.handler.config.GoogleApiKey != "" && a.handler.config.GoogleCSEId != "" {
+		fmt.Printf("[BuildGoogleSearchContext]")
 		ctxText, err = utils.BuildGoogleSearchContext(a.info.qParsed, a.handler.config.GoogleApiKey, a.handler.config.GoogleCSEId, a.handler.config.SearchTopK)
 	} else {
+		fmt.Printf("[BuildSearchContext]")
 		ctxText, err = utils.BuildSearchContext(a.info.qParsed, a.handler.config.SearchTopK)
 	}
 	if err != nil {

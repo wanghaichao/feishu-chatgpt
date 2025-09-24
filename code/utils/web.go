@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -70,6 +71,7 @@ func WebSearch(query string, topK int) ([]SearchResult, error) {
 	if topK <= 0 {
 		topK = 3
 	}
+	fmt.Printf("[WebSearch] %s", query)
 	// Use DuckDuckGo HTML with no JS
 	// ddg lite: https://duckduckgo.com/html/?q=
 	duckURL := "https://duckduckgo.com/html/?q=" + url.QueryEscape(q)
@@ -101,6 +103,7 @@ func WebSearch(query string, topK int) ([]SearchResult, error) {
 			lastTitle = l
 		}
 	}
+	fmt.Printf("[WebSearchresults] %s", results)
 	if len(results) == 0 {
 		return nil, errors.New("no results")
 	}
