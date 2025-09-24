@@ -19,6 +19,7 @@ type MessageAction struct { /*消息*/
 }
 
 func (*MessageAction) Execute(a *ActionInfo) bool {
+	fmt.Printf("[MessageAction] Starting two-stage flow for: %s\n", a.info.qParsed)
 	// Step 1: classification – decide if we need web and extract key queries
 	type webDecision struct {
 		NeedWeb bool     `json:"need_web"`

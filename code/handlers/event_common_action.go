@@ -149,14 +149,18 @@ func (*WebBrowseAction) Execute(a *ActionInfo) bool {
 type AutoSearchAction struct{}
 
 func (*AutoSearchAction) Execute(a *ActionInfo) bool {
+	fmt.Printf("[AutoSearchAction] Checking for auto search: %s\n", a.info.qParsed)
 	// only for text messages
 	if a.info.msgType != "text" {
+		fmt.Printf("[AutoSearchAction] Not text message, skipping\n")
 		return true
 	}
 	// respect config: only run when explicitly enabled
 	if !a.handler.config.SearchAlways {
+		fmt.Printf("[AutoSearchAction] SearchAlways disabled, skipping\n")
 		return true
 	}
+	fmt.Printf("[AutoSearchAction] SearchAlways enabled, proceeding with auto search\n")
 	var ctxText string
 	var err error
 	// derive search query by stripping trigger keywords; fallback to last user message
