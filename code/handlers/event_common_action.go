@@ -6,7 +6,6 @@ import (
 	"start-feishubot/initialization"
 	"start-feishubot/services/openai"
 	"start-feishubot/utils"
-	"strings"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
@@ -151,19 +150,6 @@ type AutoSearchAction struct{}
 func (*AutoSearchAction) Execute(a *ActionInfo) bool {
 	// only for text messages
 	if a.info.msgType != "text" {
-		return true
-	}
-	// trigger only when query contains networking keywords
-	q := a.info.qParsed
-	keywords := []string{"/read", "联网", "上网", "google", "谷歌", "搜索", "查一下", "最新", "实时"}
-	shouldSearch := false
-	for _, kw := range keywords {
-		if strings.Contains(q, kw) {
-			shouldSearch = true
-			break
-		}
-	}
-	if !shouldSearch {
 		return true
 	}
 	var ctxText string
