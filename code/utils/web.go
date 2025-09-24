@@ -90,8 +90,8 @@ func WebSearch(query string, topK int) ([]SearchResult, error) {
 	htmlStr := string(body)
 
 	// Extract <a class="result__a" href="...">Title</a>
-	anchorRe := regexp.MustCompile(`<a[^>]*class=\"result__a\"[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>`)
-	fmt.Printf("[WebSearchresultsanchorRe] %s", htmlStr)
+	// Be tolerant to attribute order and both quote styles
+	anchorRe := regexp.MustCompile(`<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>`)
 	matches := anchorRe.FindAllStringSubmatch(htmlStr, -1)
 	var results []SearchResult
 	for _, m := range matches {
@@ -100,8 +100,18 @@ func WebSearch(query string, topK int) ([]SearchResult, error) {
 		}
 		link := html.UnescapeString(m[1])
 		title := html.UnescapeString(stripTags(m[2]))
-		if strings.HasPrefix(link, "/l/?uddg=") {
-			if u, err := url.Parse(link); err == nil {
+		// Normalize protocol-relative URL
+		if strings.HasPrefix(link, "//") {
+			link = "https:" + link
+		}
+		// Unwrap DDG redirect links like /l/?uddg=... or https://duckduckgo.com/l/?uddg=...
+		if strings.Contains(link, "/l/?uddg=") {
+			// Ensure absolute URL for parsing
+			abs := link
+			if strings.HasPrefix(link, "/") {
+				abs = "https://duckduckgo.com" + link
+			}
+			if u, err := url.Parse(abs); err == nil {
 				if v := u.Query().Get("uddg"); v != "" {
 					if decoded, err := url.QueryUnescape(v); err == nil {
 						link = decoded
@@ -112,7 +122,8 @@ func WebSearch(query string, topK int) ([]SearchResult, error) {
 		if !strings.HasPrefix(link, "http://") && !strings.HasPrefix(link, "https://") {
 			continue
 		}
-		if strings.Contains(link, "duckduckgo.com") {
+		// Skip DDG internal pages (keep only if we successfully unwrapped above)
+		if strings.Contains(link, "duckduckgo.com") && !strings.Contains(link, "/l/?uddg=") {
 			continue
 		}
 		results = append(results, SearchResult{Title: title, URL: link})
@@ -120,7 +131,8 @@ func WebSearch(query string, topK int) ([]SearchResult, error) {
 			break
 		}
 	}
-	fmt.Printf("[WebSearchresults] %d\n", len(results))
+	fmt.Printf("[WebSearchresultsanchorRe] %s", results)
+
 	if len(results) == 0 {
 		return nil, errors.New("no results")
 	}
