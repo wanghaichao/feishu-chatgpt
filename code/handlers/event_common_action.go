@@ -3,10 +3,11 @@ package handlers
 import (
 	"context"
 	"fmt"
-	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	"start-feishubot/initialization"
 	"start-feishubot/services/openai"
 	"start-feishubot/utils"
+
+	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
 type MsgInfo struct {
@@ -113,6 +114,70 @@ func (*HelpAction) Execute(a *ActionInfo) bool {
 		return false
 	}
 	return true
+}
+
+type WebBrowseAction struct { /*联网读取*/
+}
+
+func (*WebBrowseAction) Execute(a *ActionInfo) bool {
+	if url, ok := utils.EitherCutPrefix(a.info.qParsed, "/read ", "联网 "); ok {
+		content, err := utils.FetchURLAsPlainText(url)
+		if err != nil {
+			replyMsg(*a.ctx, fmt.Sprintf("读取失败：%v", err), a.info.msgId)
+			return false
+		}
+
+		msgs := a.handler.sessionCache.GetMsg(*a.info.sessionId)
+		msgs = append(msgs, openai.Messages{Role: "system", Content: "以下是联网获取的参考资料：\n" + content})
+		msgs = append(msgs, openai.Messages{Role: "user", Content: "请基于上述资料回答。"})
+		completion, err := a.handler.gpt.Completions(msgs)
+		if err != nil {
+			replyMsg(*a.ctx, fmt.Sprintf("🤖️：联网回答失败，请稍后再试～\n错误信息: %v", err), a.info.msgId)
+			return false
+		}
+		a.handler.sessionCache.SetMsg(*a.info.sessionId, append(msgs, completion))
+		if err := replyMsg(*a.ctx, completion.Content, a.info.msgId); err != nil {
+			replyMsg(*a.ctx, fmt.Sprintf("🤖️：发送消息失败，请稍后再试～\n错误信息: %v", err), a.info.msgId)
+		}
+		return false
+	}
+	return true
+}
+
+// AutoSearchAction: if enabled in config, always search web and answer with context
+type AutoSearchAction struct{}
+
+func (*AutoSearchAction) Execute(a *ActionInfo) bool {
+	if !a.handler.config.SearchAlways {
+		return true
+	}
+	// only for text messages
+	if a.info.msgType != "text" {
+		return true
+	}
+	var ctxText string
+	var err error
+	if a.handler.config.GoogleApiKey != "" && a.handler.config.GoogleCSEId != "" {
+		ctxText, err = utils.BuildGoogleSearchContext(a.info.qParsed, a.handler.config.GoogleApiKey, a.handler.config.GoogleCSEId, a.handler.config.SearchTopK)
+	} else {
+		ctxText, err = utils.BuildSearchContext(a.info.qParsed, a.handler.config.SearchTopK)
+	}
+	if err != nil {
+		// soft-fail: continue to normal flow
+		return true
+	}
+	msgs := a.handler.sessionCache.GetMsg(*a.info.sessionId)
+	msgs = append(msgs, openai.Messages{Role: "system", Content: "以下是来自网络搜索的资料(JSON)：\n" + ctxText})
+	msgs = append(msgs, openai.Messages{Role: "user", Content: "请结合资料回答用户问题：\n" + a.info.qParsed})
+	completion, err := a.handler.gpt.Completions(msgs)
+	if err != nil {
+		return true
+	}
+	a.handler.sessionCache.SetMsg(*a.info.sessionId, append(msgs, completion))
+	if err := replyMsg(*a.ctx, completion.Content, a.info.msgId); err != nil {
+		// ignore and continue
+	}
+	return false
 }
 
 type BalanceAction struct { /*余额*/
