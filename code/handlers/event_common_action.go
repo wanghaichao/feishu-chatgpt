@@ -160,7 +160,8 @@ func (*AutoSearchAction) Execute(a *ActionInfo) bool {
 		fmt.Printf("[AutoSearchAction] SearchAlways disabled, skipping\n")
 		return true
 	}
-	fmt.Printf("[AutoSearchAction] SearchAlways enabled, proceeding with auto search\n")
+	fmt.Printf("[AutoSearchAction] SearchAlways enabled, but forcing skip to use two-stage flow\n")
+	return true // Force skip to use MessageAction's two-stage flow
 	var ctxText string
 	var err error
 	// derive search query by stripping trigger keywords; fallback to last user message
