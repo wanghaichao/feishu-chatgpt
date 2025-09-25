@@ -228,7 +228,6 @@ Railway 是一家国外的 Serverless 平台，支持多种语言，可以一键
 
 在打开的页面中，配置环境变量，每个变量的说明如下图所示：
 
-
 <img src='https://user-images.githubusercontent.com/50035229/225005602-88d8678f-9d17-4dc5-8d1e-4abf64fb84fd.png' alt='Railway 环境变量' width='500px'/>
 
 #### 3. 部署项目
