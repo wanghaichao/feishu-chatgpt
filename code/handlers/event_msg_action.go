@@ -324,11 +324,9 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 		if maxTokens <= 0 {
 			maxTokens = 1500 // 默认值
 		}
-		if maxTokens < 100 {
-			maxTokens = 500 // 最小值
-		}
-		if maxTokens > 4000 {
-			maxTokens = 4000 // 限制最大值
+		maxTokens = maxTokens * 2
+		if maxTokens > 10000 {
+			maxTokens = 10000 // 限制最大值
 		}
 		fmt.Printf("    🎯 Using ChatGPT suggested max_tokens: %d\n", maxTokens)
 
