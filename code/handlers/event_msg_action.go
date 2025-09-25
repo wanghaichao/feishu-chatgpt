@@ -22,14 +22,15 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 	fmt.Printf("[MessageAction] Starting two-stage flow for: %s\n", a.info.qParsed)
 	// Step 1: classification – decide if we need web and extract key queries
 	type webDecision struct {
-		NeedWeb bool     `json:"need_web"`
-		Queries []string `json:"queries,omitempty"`
-		Answer  string   `json:"answer,omitempty"`
-		Reason  string   `json:"reason,omitempty"`
+		NeedWeb    bool     `json:"need_web"`
+		Queries    []string `json:"queries,omitempty"`
+		Answer     string   `json:"answer,omitempty"`
+		Reason     string   `json:"reason,omitempty"`
+		SearchTopK int      `json:"search_top_k,omitempty"` // ChatGPT 建议的搜索数量
 	}
 
 	// Build classification prompt
-	classifySystem := openai.Messages{Role: "system", Content: "你是一个助手。请严格输出 JSON，不要包含多余文本。根据用户问题判断是否需要联网检索外部信息才能给出可靠答案。若需要，请给出3-6条精炼的中文检索关键信息（queries）。若不需要，请直接给出最终答案。必须输出如下 JSON：{\"need_web\": boolean, \"queries\": string[], \"answer\": string}. 当 need_web=true 时，尽量填写 queries，answer 可留空；当 need_web=false 时，必须填写 answer，queries 可留空。"}
+	classifySystem := openai.Messages{Role: "system", Content: "你是一个助手。请严格输出 JSON，不要包含多余文本。根据用户问题判断是否需要联网检索外部信息才能给出可靠答案。若需要，请给出3-6条精炼的中文检索关键信息（queries），并建议每个查询的搜索数量（search_top_k，建议1-5个结果）。若不需要，请直接给出最终答案。必须输出如下 JSON：{\"need_web\": boolean, \"queries\": string[], \"answer\": string, \"search_top_k\": number}. 当 need_web=true 时，尽量填写 queries 和 search_top_k，answer 可留空；当 need_web=false 时，必须填写 answer，queries 和 search_top_k 可留空。"}
 
 	history := a.handler.sessionCache.GetMsg(*a.info.sessionId)
 	classifyMsgs := append([]openai.Messages{classifySystem}, history...)
@@ -80,6 +81,17 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 			queries = []string{a.info.qParsed}
 		}
 		fmt.Println("[Second Stage Triggered] queries:", queries)
+
+		// 使用 ChatGPT 建议的搜索数量，如果没有则使用默认值
+		searchTopK := decision.SearchTopK
+		if searchTopK <= 0 {
+			searchTopK = 3 // 默认值
+		}
+		if searchTopK > 10 {
+			searchTopK = 10 // 限制最大值
+		}
+		fmt.Printf("[Second Stage] Using SearchTopK: %d\n", searchTopK)
+
 		// 最多取前三条查询，分别构建搜索上下文
 		maxQ := 3
 		if len(queries) < maxQ {
@@ -91,8 +103,19 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 			if q == "" {
 				continue
 			}
-			fmt.Printf("[Web Search] Query %d: %s\n", i+1, q)
-			ctx, err := utils.BuildGoogleSearchContext(q, a.handler.config.GoogleApiKey, a.handler.config.GoogleCSEId, 3)
+			fmt.Printf("[Web Search] Query %d: %s (topK=%d)\n", i+1, q, searchTopK)
+			var ctx string
+			var err error
+			// 优先使用 Google 搜索，如果失败则回退到 DuckDuckGo
+			if a.handler.config.GoogleApiKey != "" && a.handler.config.GoogleCSEId != "" {
+				ctx, err = utils.BuildGoogleSearchContext(q, a.handler.config.GoogleApiKey, a.handler.config.GoogleCSEId, searchTopK)
+				if err != nil {
+					fmt.Printf("[Web Search] Query %d Google failed, falling back to DuckDuckGo: %v\n", i+1, err)
+					ctx, err = utils.BuildSearchContext(q, searchTopK)
+				}
+			} else {
+				ctx, err = utils.BuildSearchContext(q, searchTopK)
+			}
 			if err != nil {
 				fmt.Printf("[Web Search] Query %d failed: %v\n", i+1, err)
 				continue
