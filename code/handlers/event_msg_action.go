@@ -1,11 +1,14 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"start-feishubot/services/openai"
 	"start-feishubot/utils"
 	"strings"
+	"sync"
+	"time"
 )
 
 func min(a, b int) int {
@@ -115,41 +118,171 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 		}
 		fmt.Printf("[Second Stage] Using SearchTopK: %d\n", searchTopK)
 
-		// 最多取前三条查询，分别构建搜索上下文
-		maxQ := 3
+		// 并发搜索：最多取前10条查询，并发构建搜索上下文
+		maxQ := 10
 		if len(queries) < maxQ {
 			maxQ = len(queries)
 		}
-		var ctxParts []string
+
+		// 获取并发数配置
+		maxConcurrency := a.handler.config.SearchMaxConcurrency
+		if maxConcurrency <= 0 {
+			maxConcurrency = 4 // 默认并发数
+		}
+		if maxConcurrency > 10 {
+			maxConcurrency = 10 // 限制最大并发数
+		}
+
+		fmt.Printf("🚀 Starting concurrent search for %d queries (max concurrency: %d)...\n", maxQ, maxConcurrency)
+
+		// 创建结果通道和信号量
+		type searchResult struct {
+			index int
+			query string
+			ctx   string
+			err   error
+		}
+
+		resultChan := make(chan searchResult, maxQ)
+		semaphore := make(chan struct{}, maxConcurrency) // 信号量控制并发数
+		var wg sync.WaitGroup
+
+		// 启动并发搜索
 		for i := 0; i < maxQ; i++ {
 			q := strings.TrimSpace(queries[i])
 			if q == "" {
 				continue
 			}
-			fmt.Printf("[Web Search] Query %d: %s (topK=%d)\n", i+1, q, searchTopK)
-			var ctx string
-			var err error
-			// 优先使用 Google 搜索，如果失败则回退到 DuckDuckGo
-			if a.handler.config.GoogleApiKey != "" && a.handler.config.GoogleCSEId != "" {
-				ctx, err = utils.BuildGoogleSearchContext(q, a.handler.config.GoogleApiKey, a.handler.config.GoogleCSEId, searchTopK)
-				if err != nil {
-					fmt.Printf("[Web Search] Query %d Google failed, falling back to DuckDuckGo: %v\n", i+1, err)
-					ctx, err = utils.BuildSearchContext(q, searchTopK)
+
+			wg.Add(1)
+			go func(index int, query string) {
+				defer wg.Done()
+
+				// 获取信号量
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }()
+
+				fmt.Printf("🔍 [Concurrent] Query %d: %s (topK=%d)\n", index+1, query, searchTopK)
+
+				// 创建带超时的上下文
+				timeout := time.Duration(a.handler.config.SearchPerFetchTimeoutSec) * time.Second
+				if timeout <= 0 {
+					timeout = 6 * time.Second // 默认超时时间
 				}
-			} else {
-				ctx, err = utils.BuildSearchContext(q, searchTopK)
+
+				ctx, cancel := context.WithTimeout(context.Background(), timeout)
+				defer cancel()
+
+				// 使用通道来接收搜索结果
+				type searchResultChan struct {
+					ctx string
+					err error
+				}
+
+				searchChan := make(chan searchResultChan, 1)
+
+				go func() {
+					var resultCtx string
+					var resultErr error
+
+					// 优先使用 Google 搜索，如果失败则回退到 DuckDuckGo
+					if a.handler.config.GoogleApiKey != "" && a.handler.config.GoogleCSEId != "" {
+						resultCtx, resultErr = utils.BuildGoogleSearchContext(query, a.handler.config.GoogleApiKey, a.handler.config.GoogleCSEId, searchTopK)
+						if resultErr != nil {
+							fmt.Printf("⚠️ [Concurrent] Query %d Google failed, falling back to DuckDuckGo: %v\n", index+1, resultErr)
+							resultCtx, resultErr = utils.BuildSearchContext(query, searchTopK)
+						}
+					} else {
+						resultCtx, resultErr = utils.BuildSearchContext(query, searchTopK)
+					}
+
+					searchChan <- searchResultChan{ctx: resultCtx, err: resultErr}
+				}()
+
+				// 等待搜索结果或超时
+				select {
+				case result := <-searchChan:
+					// 发送结果到通道
+					resultChan <- searchResult{
+						index: index,
+						query: query,
+						ctx:   result.ctx,
+						err:   result.err,
+					}
+				case <-ctx.Done():
+					fmt.Printf("⏰ [Concurrent] Query %d timed out after %v\n", index+1, timeout)
+					resultChan <- searchResult{
+						index: index,
+						query: query,
+						ctx:   "",
+						err:   fmt.Errorf("search timeout after %v", timeout),
+					}
+				}
+			}(i, q)
+		}
+
+		// 等待所有搜索完成，带整体超时
+		done := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(resultChan)
+			close(done)
+		}()
+
+		// 设置整体超时
+		overallTimeout := time.Duration(a.handler.config.SearchOverallTimeoutSec) * time.Second
+		if overallTimeout <= 0 {
+			overallTimeout = 10 * time.Second // 默认整体超时时间
+		}
+
+		fmt.Printf("⏱️ [Concurrent] Overall timeout: %v\n", overallTimeout)
+
+		// 收集结果
+		var ctxParts []string
+		var successfulSearches int
+		var failedSearches int
+		var timeoutOccurred bool
+
+		// 使用 select 等待结果或超时
+		for {
+			select {
+			case result, ok := <-resultChan:
+				if !ok {
+					// 所有搜索完成
+					fmt.Printf("🎯 [Concurrent] Search completed: %d successful, %d failed\n", successfulSearches, failedSearches)
+					goto searchComplete
+				}
+
+				if result.err != nil {
+					fmt.Printf("❌ [Concurrent] Query %d failed: %v\n", result.index+1, result.err)
+					failedSearches++
+					continue
+				}
+
+				if strings.TrimSpace(result.ctx) == "" {
+					fmt.Printf("⚠️ [Concurrent] Query %d returned empty context\n", result.index+1)
+					failedSearches++
+					continue
+				}
+
+				fmt.Printf("✅ [Concurrent] Query %d context length: %d chars\n", result.index+1, len(result.ctx))
+				fmt.Printf("📄 [Concurrent] Query %d context preview: %s...\n", result.index+1, result.ctx[:min(200, len(result.ctx))])
+
+				ctxParts = append(ctxParts, fmt.Sprintf("{\"query\": %q, \"sources\": %s}", result.query, result.ctx))
+				successfulSearches++
+
+			case <-time.After(overallTimeout):
+				fmt.Printf("⏰ [Concurrent] Overall search timeout after %v\n", overallTimeout)
+				timeoutOccurred = true
+				goto searchComplete
 			}
-			if err != nil {
-				fmt.Printf("[Web Search] Query %d failed: %v\n", i+1, err)
-				continue
-			}
-			if strings.TrimSpace(ctx) == "" {
-				fmt.Printf("[Web Search] Query %d returned empty context\n", i+1)
-				continue
-			}
-			fmt.Printf("[Web Search] Query %d context length: %d chars\n", i+1, len(ctx))
-			fmt.Printf("[Web Search] Query %d context preview: %s...\n", i+1, ctx[:min(200, len(ctx))])
-			ctxParts = append(ctxParts, fmt.Sprintf("{\"query\": %q, \"sources\": %s}", q, ctx))
+		}
+
+	searchComplete:
+		if timeoutOccurred {
+			fmt.Printf("⚠️ [Concurrent] Search terminated due to timeout: %d successful, %d failed\n", successfulSearches, failedSearches)
+		} else {
+			fmt.Printf("🎯 [Concurrent] Search completed: %d successful, %d failed\n", successfulSearches, failedSearches)
 		}
 		fmt.Println("[Second Stage] built contexts:", len(ctxParts))
 		if len(ctxParts) == 0 {
@@ -180,7 +313,7 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 		fmt.Printf("[Second Stage] Final context JSON length: %d chars\n", len(contextJSON))
 		fmt.Printf("[Second Stage] Final context JSON preview: %s...\n", contextJSON[:min(500, len(contextJSON))])
 		// 构建二次提问消息，携带检索资料
-		webSystem := openai.Messages{Role: "system", Content: "你是一个联网助手。根据给定的检索资料（JSON 数组，含 query 与 sources 列表，每个 source 有 title、url、content），请严谨回答用户问题：\n- 仅使用资料中能够支持的事实；\n- 不确定时明确说明不确定；\n- 在内容末尾列出引用的网址列表。"}
+		webSystem := openai.Messages{Role: "system", Content: "你是一个联网助手。根据给定的检索资料（JSON 数组，含 query 与 sources 列表，每个 source 有 title、url、content），请严谨回答用户问题：\n- 如果你的知识库有此信息优先使用你的知识,没有的再使用资料\n- 不确定时明确说明不确定；\n- 在内容末尾列出引用的网址列表。"}
 		userWithCtx := openai.Messages{Role: "user", Content: fmt.Sprintf("用户问题：%s\n检索资料(JSON)：%s", a.info.qParsed, contextJSON)}
 		secondMsgs := append(history, webSystem)
 		secondMsgs = append(secondMsgs, userWithCtx)
