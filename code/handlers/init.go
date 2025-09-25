@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"start-feishubot/initialization"
 	"start-feishubot/services/openai"
 
@@ -29,6 +30,9 @@ func InitHandlers(gpt *openai.ChatGPT, config initialization.Config) {
 }
 
 func Handler(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
+	fmt.Printf("🎯 Handler called with event: %s\n", *event.Event.Message.MessageId)
+	fmt.Printf("📋 Event details: chatType=%s, msgType=%s\n",
+		*event.Event.Message.ChatType, *event.Event.Message.MessageType)
 	return handlers.msgReceivedHandler(ctx, event)
 }
 

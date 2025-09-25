@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"start-feishubot/handlers"
@@ -120,8 +121,12 @@ func main() {
 	})
 
 	log.Println("  📍 Registering /webhook/event endpoint")
-	r.POST("/webhook/event",
-		sdkginext.NewEventHandlerFunc(eventHandler))
+	r.POST("/webhook/event", func(c *gin.Context) {
+		fmt.Printf("📨 Webhook event received from %s\n", c.ClientIP())
+		fmt.Printf("📋 Request headers: %v\n", c.Request.Header)
+		fmt.Printf("📝 Request body length: %d\n", c.Request.ContentLength)
+		sdkginext.NewEventHandlerFunc(eventHandler)(c)
+	})
 
 	log.Println("  📍 Registering /webhook/card endpoint")
 	r.POST("/webhook/card",
