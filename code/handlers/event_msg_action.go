@@ -269,7 +269,14 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 				fmt.Printf("✅ [Concurrent] Query %d context length: %d chars\n", result.index+1, len(result.ctx))
 				fmt.Printf("📄 [Concurrent] Query %d context preview: %s...\n", result.index+1, result.ctx[:min(200, len(result.ctx))])
 
-				ctxParts = append(ctxParts, fmt.Sprintf("{\"query\": %q, \"sources\": %s}", result.query, result.ctx))
+				// 确保 ctx 是有效的 JSON 字符串
+				var ctxJSON interface{}
+				if err := json.Unmarshal([]byte(result.ctx), &ctxJSON); err != nil {
+					fmt.Printf("⚠️ [Concurrent] Query %d ctx is not valid JSON, using fallback: %v\n", result.index+1, err)
+					ctxParts = append(ctxParts, fmt.Sprintf("{\"query\": %q, \"sources\": \"搜索失败，无法获取内容\"}", result.query))
+				} else {
+					ctxParts = append(ctxParts, fmt.Sprintf("{\"query\": %q, \"sources\": %s}", result.query, result.ctx))
+				}
 				successfulSearches++
 
 			case <-time.After(overallTimeout):
@@ -299,6 +306,18 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 		contextJSON := "[" + strings.Join(ctxParts, ",") + "]"
 		fmt.Printf("[Second Stage] Final context JSON length: %d chars\n", len(contextJSON))
 		fmt.Printf("[Second Stage] Final context JSON preview: %s...\n", contextJSON[:min(500, len(contextJSON))])
+
+		// 验证 JSON 格式
+		var jsonTest interface{}
+		if err := json.Unmarshal([]byte(contextJSON), &jsonTest); err != nil {
+			fmt.Printf("❌ [Second Stage] Invalid JSON format: %v\n", err)
+			fmt.Printf("❌ [Second Stage] Raw contextJSON: %s\n", contextJSON)
+			// 使用安全的默认值
+			contextJSON = "[{\"query\": \"用户问题\", \"sources\": \"基于现有知识回答\"}]"
+			fmt.Printf("✅ [Second Stage] Using safe fallback JSON: %s\n", contextJSON)
+		} else {
+			fmt.Printf("✅ [Second Stage] JSON format is valid\n")
+		}
 		// 构建二次提问消息，携带检索资料
 		webSystem := openai.Messages{Role: "system", Content: "你是一个联网助手。根据给定的检索资料（JSON 数组，含 query 与 sources 列表，每个 source 有 title、url、content），请严谨回答用户问题：\n- 优先使用检索到的资料信息\n- 如果检索资料不足或为空，请基于你的知识库尽力回答\n- 如果某些搜索失败，请基于成功的搜索结果和你的知识给出最佳答案\n- 不确定时明确说明不确定；\n- 在内容末尾列出引用的网址列表（如果有的话）。"}
 		userWithCtx := openai.Messages{Role: "user", Content: fmt.Sprintf("用户问题：%s\n检索资料(JSON)：%s", a.info.qParsed, contextJSON)}
@@ -306,7 +325,16 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 		secondMsgs = append(secondMsgs, userWithCtx)
 
 		// 使用 ChatGPT 建议的 max_tokens
-		maxTokens := 10000
+		maxTokens := decision.MaxTokens
+		if maxTokens <= 0 {
+			maxTokens = 1500 // 默认值
+		}
+		if maxTokens < 100 {
+			maxTokens = 500 // 最小值
+		}
+		if maxTokens > 4000 {
+			maxTokens = 4000 // 限制最大值
+		}
 		fmt.Printf("    🎯 Using ChatGPT suggested max_tokens: %d\n", maxTokens)
 
 		finalResp, err := a.handler.gpt.CompletionsWithMaxTokens(secondMsgs, maxTokens)
