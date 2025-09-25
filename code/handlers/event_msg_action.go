@@ -320,14 +320,7 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 		secondMsgs = append(secondMsgs, userWithCtx)
 
 		// 使用 ChatGPT 建议的 max_tokens
-		maxTokens := decision.MaxTokens
-		if maxTokens <= 0 {
-			maxTokens = 1500 // 默认值
-		}
-		maxTokens = maxTokens * 2
-		if maxTokens > 10000 {
-			maxTokens = 10000 // 限制最大值
-		}
+		maxTokens := 10000
 		fmt.Printf("    🎯 Using ChatGPT suggested max_tokens: %d\n", maxTokens)
 
 		finalResp, err := a.handler.gpt.CompletionsWithMaxTokens(secondMsgs, maxTokens)
