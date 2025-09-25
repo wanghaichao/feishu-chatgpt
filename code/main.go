@@ -7,6 +7,7 @@ import (
 	"start-feishubot/handlers"
 	"start-feishubot/initialization"
 	"start-feishubot/services/openai"
+	"strconv"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
@@ -25,14 +26,24 @@ var (
 )
 
 func main() {
+	log.Println("🚀 Starting Feishu ChatGPT Bot...")
+
 	initialization.InitRoleList()
 	pflag.Parse()
 	config := initialization.LoadConfig(*cfg)
 
 	// 支持 Railway 的 PORT 环境变量
 	if port := os.Getenv("PORT"); port != "" {
-		log.Printf("Using Railway PORT: %s", port)
-		config.HttpPort = 9000 // Railway 会自动映射到 PORT
+		log.Printf("🌐 Using Railway PORT: %s", port)
+		// 将 PORT 环境变量转换为整数并设置到配置中
+		if portInt, err := strconv.Atoi(port); err == nil {
+			config.HttpPort = portInt
+			log.Printf("✅ Port set to: %d", config.HttpPort)
+		} else {
+			log.Printf("❌ Invalid PORT value: %s, using default 9000", port)
+		}
+	} else {
+		log.Printf("📡 Using default port: %d", config.HttpPort)
 	}
 
 	initialization.LoadLarkClient(*config)
@@ -81,9 +92,13 @@ func main() {
 		sdkginext.NewCardActionHandlerFunc(
 			cardHandler))
 
+	log.Printf("🎯 Starting server on port %d...", config.HttpPort)
+	log.Printf("🔗 Health check available at: http://localhost:%d/ping", config.HttpPort)
+	log.Printf("🔗 Webhook endpoint: http://localhost:%d/webhook/event", config.HttpPort)
+
 	err := initialization.StartServer(*config, r)
 	if err != nil {
-		log.Fatalf("failed to start server: %v", err)
+		log.Fatalf("❌ Failed to start server: %v", err)
 	}
 
 }

@@ -1,13 +1,9 @@
 [build]
 builder = "dockerfile"
-dockerfilePath = "Dockerfile.railway"
+dockerfilePath = "Dockerfile.simple"
 
 [deploy]
-startCommand = "/app/feishu_chatgpt"
 healthcheckPath = "/ping"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
-
-[env]
-PORT = "9000"
