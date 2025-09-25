@@ -30,9 +30,35 @@ func InitHandlers(gpt *openai.ChatGPT, config initialization.Config) {
 }
 
 func Handler(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
-	fmt.Printf("🎯 Handler called with event: %s\n", *event.Event.Message.MessageId)
-	fmt.Printf("📋 Event details: chatType=%s, msgType=%s\n",
-		*event.Event.Message.ChatType, *event.Event.Message.MessageType)
+	// 添加空指针检查
+	if event == nil || event.Event == nil || event.Event.Message == nil {
+		fmt.Println("❌ Handler: Invalid event structure: nil pointer detected")
+		return fmt.Errorf("invalid event structure")
+	}
+
+	// 安全地获取消息ID
+	var msgIdStr string
+	if event.Event.Message.MessageId != nil {
+		msgIdStr = *event.Event.Message.MessageId
+	} else {
+		msgIdStr = "unknown"
+	}
+	fmt.Printf("🎯 Handler called with event: %s\n", msgIdStr)
+
+	// 安全地获取聊天类型和消息类型
+	var chatTypeStr, msgTypeStr string
+	if event.Event.Message.ChatType != nil {
+		chatTypeStr = *event.Event.Message.ChatType
+	} else {
+		chatTypeStr = "unknown"
+	}
+	if event.Event.Message.MessageType != nil {
+		msgTypeStr = *event.Event.Message.MessageType
+	} else {
+		msgTypeStr = "unknown"
+	}
+	fmt.Printf("📋 Event details: chatType=%s, msgType=%s\n", chatTypeStr, msgTypeStr)
+
 	return handlers.msgReceivedHandler(ctx, event)
 }
 
@@ -64,11 +90,17 @@ func judgeCardType(cardAction *larkcard.CardAction) HandlerType {
 }
 
 func judgeChatType(event *larkim.P2MessageReceiveV1) HandlerType {
-	chatType := event.Event.Message.ChatType
-	if *chatType == "group" {
+	// 添加空指针检查
+	if event == nil || event.Event == nil || event.Event.Message == nil || event.Event.Message.ChatType == nil {
+		fmt.Println("❌ judgeChatType: Invalid event structure")
+		return "otherChat"
+	}
+
+	chatType := *event.Event.Message.ChatType
+	if chatType == "group" {
 		return GroupHandler
 	}
-	if *chatType == "p2p" {
+	if chatType == "p2p" {
 		return UserHandler
 	}
 	return "otherChat"

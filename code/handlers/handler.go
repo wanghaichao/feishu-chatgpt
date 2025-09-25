@@ -42,19 +42,36 @@ func (m MessageHandler) cardHandler(ctx context.Context,
 }
 
 func judgeMsgType(event *larkim.P2MessageReceiveV1) (string, error) {
-	msgType := event.Event.Message.MessageType
-
-	switch *msgType {
-	case "text", "image", "audio":
-		return *msgType, nil
-	default:
-		return "", fmt.Errorf("unknown message type: %v", *msgType)
+	// 添加空指针检查
+	if event == nil || event.Event == nil || event.Event.Message == nil || event.Event.Message.MessageType == nil {
+		return "", fmt.Errorf("invalid event structure: nil message type")
 	}
 
+	msgType := *event.Event.Message.MessageType
+
+	switch msgType {
+	case "text", "image", "audio":
+		return msgType, nil
+	default:
+		return "", fmt.Errorf("unknown message type: %v", msgType)
+	}
 }
 
 func (m MessageHandler) msgReceivedHandler(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
-	fmt.Printf("📨 Received message event: %s\n", *event.Event.Message.MessageId)
+	// 添加空指针检查
+	if event == nil || event.Event == nil || event.Event.Message == nil {
+		fmt.Println("❌ Invalid event structure: nil pointer detected")
+		return fmt.Errorf("invalid event structure")
+	}
+
+	// 安全地获取消息ID
+	var msgIdStr string
+	if event.Event.Message.MessageId != nil {
+		msgIdStr = *event.Event.Message.MessageId
+	} else {
+		msgIdStr = "unknown"
+	}
+	fmt.Printf("📨 Received message event: %s\n", msgIdStr)
 
 	handlerType := judgeChatType(event)
 	fmt.Printf("🔍 Chat type: %s\n", handlerType)
@@ -76,7 +93,14 @@ func (m MessageHandler) msgReceivedHandler(ctx context.Context, event *larkim.P2
 	chatId := event.Event.Message.ChatId
 	mention := event.Event.Message.Mentions
 
-	fmt.Printf("📋 Message details: msgId=%s, chatId=%s\n", *msgId, *chatId)
+	// 安全地打印消息详情
+	var chatIdStr string
+	if chatId != nil {
+		chatIdStr = *chatId
+	} else {
+		chatIdStr = "unknown"
+	}
+	fmt.Printf("📋 Message details: msgId=%s, chatId=%s\n", msgIdStr, chatIdStr)
 	if rootId != nil {
 		fmt.Printf("🔗 Root ID: %s\n", *rootId)
 	}
@@ -84,12 +108,22 @@ func (m MessageHandler) msgReceivedHandler(ctx context.Context, event *larkim.P2
 	sessionId := rootId
 	if sessionId == nil || *sessionId == "" {
 		sessionId = msgId
-		fmt.Printf("🆔 Using msgId as sessionId: %s\n", *sessionId)
+		if sessionId != nil {
+			fmt.Printf("🆔 Using msgId as sessionId: %s\n", *sessionId)
+		} else {
+			fmt.Printf("🆔 Using msgId as sessionId: unknown\n")
+		}
 	} else {
 		fmt.Printf("🆔 Using rootId as sessionId: %s\n", *sessionId)
 	}
 
-	parsedContent := strings.Trim(parseContent(*content), " ")
+	// 安全地解析内容
+	var parsedContent string
+	if content != nil {
+		parsedContent = strings.Trim(parseContent(*content), " ")
+	} else {
+		parsedContent = ""
+	}
 	fmt.Printf("📝 Parsed content: %s\n", parsedContent)
 
 	msgInfo := MsgInfo{

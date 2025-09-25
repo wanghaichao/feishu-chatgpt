@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	maxTokens = 10000
+	maxTokens = 4096
 	engine    = "gpt-5-2025-08-07"
 )
 
