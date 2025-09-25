@@ -6,7 +6,6 @@ import (
 	"start-feishubot/initialization"
 	"start-feishubot/services/openai"
 	"start-feishubot/utils"
-	"strings"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
@@ -47,17 +46,27 @@ type ProcessMentionAction struct { //是否机器人应该处理
 }
 
 func (*ProcessMentionAction) Execute(a *ActionInfo) bool {
+	fmt.Printf("    🔍 ProcessMentionAction: handlerType=%s\n", a.info.handlerType)
+
 	// 私聊直接过
 	if a.info.handlerType == UserHandler {
+		fmt.Printf("    ✅ Private chat, proceeding\n")
 		return true
 	}
+
 	// 群聊判断是否提到机器人
 	if a.info.handlerType == GroupHandler {
-		if a.handler.judgeIfMentionMe(a.info.mention) {
-			return true
+		fmt.Printf("    👥 Group chat, checking mentions: %d mentions\n", len(a.info.mention))
+		mentioned := a.handler.judgeIfMentionMe(a.info.mention)
+		if mentioned {
+			fmt.Printf("    ✅ Bot mentioned, proceeding\n")
+		} else {
+			fmt.Printf("    ❌ Bot not mentioned, skipping\n")
 		}
-		return false
+		return mentioned
 	}
+
+	fmt.Printf("    ❌ Unknown handler type, skipping\n")
 	return false
 }
 
@@ -65,12 +74,14 @@ type EmptyAction struct { /*空消息*/
 }
 
 func (*EmptyAction) Execute(a *ActionInfo) bool {
+	fmt.Printf("    🔍 EmptyAction: qParsed='%s' (length=%d)\n", a.info.qParsed, len(a.info.qParsed))
 	if len(a.info.qParsed) == 0 {
+		fmt.Printf("    ❌ Empty message, sending default response\n")
 		sendMsg(*a.ctx, "🤖️：你想知道什么呢~", a.info.chatId)
-		fmt.Println("msgId", *a.info.msgId,
-			"message.text is empty")
+		fmt.Printf("    📤 Sent empty message response to chatId: %s\n", *a.info.chatId)
 		return false
 	}
+	fmt.Printf("    ✅ Non-empty message, proceeding\n")
 	return true
 }
 
@@ -162,56 +173,6 @@ func (*AutoSearchAction) Execute(a *ActionInfo) bool {
 	}
 	fmt.Printf("[AutoSearchAction] SearchAlways enabled, but forcing skip to use two-stage flow\n")
 	return true // Force skip to use MessageAction's two-stage flow
-	var ctxText string
-	var err error
-	// derive search query by stripping trigger keywords; fallback to last user message
-	searchQuery := a.info.qParsed
-	if a.handler.config.SearchOnlyOnKeywords {
-		kws := a.handler.config.SearchKeywords
-		for _, kw := range kws {
-			searchQuery = strings.ReplaceAll(searchQuery, kw, "")
-		}
-		searchQuery = strings.TrimSpace(searchQuery)
-		if searchQuery == "" {
-			// fallback to last user message in session history
-			hist := a.handler.sessionCache.GetMsg(*a.info.sessionId)
-			for i := len(hist) - 1; i >= 0; i-- {
-				if hist[i].Role == "user" && strings.TrimSpace(hist[i].Content) != "" {
-					searchQuery = strings.TrimSpace(hist[i].Content)
-					break
-				}
-			}
-			if searchQuery == "" {
-				searchQuery = a.info.qParsed
-			}
-		}
-	}
-	fmt.Printf("[WebSearch] %s\n", searchQuery)
-	if a.handler.config.GoogleApiKey != "" && a.handler.config.GoogleCSEId != "" {
-		ctxText, err = utils.BuildGoogleSearchContext(searchQuery, a.handler.config.GoogleApiKey, a.handler.config.GoogleCSEId, a.handler.config.SearchTopK)
-		if err != nil {
-			// fallback to DuckDuckGo when Google fails (e.g., quota exceeded)
-			ctxText, err = utils.BuildSearchContext(searchQuery, a.handler.config.SearchTopK)
-		}
-	} else {
-		ctxText, err = utils.BuildSearchContext(searchQuery, a.handler.config.SearchTopK)
-	}
-	if err != nil {
-		// soft-fail: continue to normal flow
-		return true
-	}
-	msgs := a.handler.sessionCache.GetMsg(*a.info.sessionId)
-	msgs = append(msgs, openai.Messages{Role: "system", Content: "以下是网络搜索的结果(JSON，包含标题、摘要、URL、内容片段)。请核对来源并据此回答。\n" + ctxText})
-	msgs = append(msgs, openai.Messages{Role: "user", Content: "基于上述资料，回答：\n" + a.info.qParsed})
-	completion, err := a.handler.gpt.Completions(msgs)
-	if err != nil {
-		return true
-	}
-	a.handler.sessionCache.SetMsg(*a.info.sessionId, append(msgs, completion))
-	if err := replyMsg(*a.ctx, completion.Content, a.info.msgId); err != nil {
-		// ignore and continue
-	}
-	return false
 }
 
 type BalanceAction struct { /*余额*/

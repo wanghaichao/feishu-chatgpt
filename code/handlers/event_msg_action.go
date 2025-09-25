@@ -19,7 +19,9 @@ type MessageAction struct { /*消息*/
 }
 
 func (*MessageAction) Execute(a *ActionInfo) bool {
-	fmt.Printf("[MessageAction] Starting two-stage flow for: %s\n", a.info.qParsed)
+	fmt.Printf("    🔍 MessageAction: Starting two-stage flow for: '%s'\n", a.info.qParsed)
+	fmt.Printf("    📋 Session ID: %s\n", *a.info.sessionId)
+
 	// Step 1: classification – decide if we need web and extract key queries
 	type webDecision struct {
 		NeedWeb    bool     `json:"need_web"`
@@ -29,33 +31,48 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 		SearchTopK int      `json:"search_top_k,omitempty"` // ChatGPT 建议的搜索数量
 	}
 
+	fmt.Printf("    🎯 Step 1: Building classification prompt...\n")
 	// Build classification prompt
 	classifySystem := openai.Messages{Role: "system", Content: "你是一个助手。请严格输出 JSON，不要包含多余文本。根据用户问题判断是否需要联网检索外部信息才能给出可靠答案。若需要，请给出3-6条精炼的中文检索关键信息（queries），并建议每个查询的搜索数量（search_top_k，建议1-5个结果）。若不需要，请直接给出最终答案。必须输出如下 JSON：{\"need_web\": boolean, \"queries\": string[], \"answer\": string, \"search_top_k\": number}. 当 need_web=true 时，尽量填写 queries 和 search_top_k，answer 可留空；当 need_web=false 时，必须填写 answer，queries 和 search_top_k 可留空。"}
 
+	fmt.Printf("    📚 Getting session history...\n")
 	history := a.handler.sessionCache.GetMsg(*a.info.sessionId)
+	fmt.Printf("    📖 Session history length: %d messages\n", len(history))
+
+	fmt.Printf("    🔧 Building classification messages...\n")
 	classifyMsgs := append([]openai.Messages{classifySystem}, history...)
 	classifyMsgs = append(classifyMsgs, openai.Messages{Role: "user", Content: a.info.qParsed})
+	fmt.Printf("    📝 Total messages to send: %d\n", len(classifyMsgs))
 
+	fmt.Printf("    🤖 Calling OpenAI for classification...\n")
 	clsResp, err := a.handler.gpt.Completions(classifyMsgs)
 	if err != nil {
+		fmt.Printf("    ❌ OpenAI classification failed: %v\n", err)
 		replyMsg(*a.ctx, fmt.Sprintf(
 			"🤖️：消息机器人摆烂了，请稍后再试～\n错误信息: %v", err), a.info.msgId)
 		return false
 	}
-	// debug: print first-stage raw output
-	fmt.Println("[OpenAI First] raw:", clsResp.Content)
 
+	fmt.Printf("    ✅ OpenAI classification completed\n")
+	fmt.Printf("    📄 Raw response: %s\n", clsResp.Content)
+
+	fmt.Printf("    🔍 Parsing classification result...\n")
 	var decision webDecision
 	if err := json.Unmarshal([]byte(clsResp.Content), &decision); err != nil {
+		fmt.Printf("    ❌ Failed to parse JSON: %v\n", err)
+		fmt.Printf("    🔄 Falling back to single-shot behavior...\n")
+
 		// Fallback: if not valid JSON, use original single-shot behavior
 		msg := append(history, openai.Messages{Role: "user", Content: a.info.qParsed})
+		fmt.Printf("    🤖 Calling OpenAI for single-shot response...\n")
 		completions, err2 := a.handler.gpt.Completions(msg)
 		if err2 != nil {
+			fmt.Printf("    ❌ Single-shot OpenAI call failed: %v\n", err2)
 			replyMsg(*a.ctx, fmt.Sprintf("🤖️：消息机器人摆烂了，请稍后再试～\n错误信息: %v", err2), a.info.msgId)
 			return false
 		}
-		// debug: print single-shot raw output
-		fmt.Println("[OpenAI Single] raw:", completions.Content)
+		fmt.Printf("    ✅ Single-shot response received\n")
+		fmt.Printf("    📄 Single-shot raw: %s\n", completions.Content)
 		// append to history as final answer
 		msg = append(msg, completions)
 		a.handler.sessionCache.SetMsg(*a.info.sessionId, msg)
@@ -70,17 +87,23 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 		}
 		return true
 	}
+
+	fmt.Printf("    ✅ Classification parsed successfully\n")
 	if b, _ := json.Marshal(decision); len(b) > 0 {
-		fmt.Println("[Decision JSON]:", string(b))
+		fmt.Printf("    📊 Decision: %s\n", string(b))
 	}
+	fmt.Printf("    🔍 Decision details: need_web=%t, queries_count=%d, search_top_k=%d\n",
+		decision.NeedWeb, len(decision.Queries), decision.SearchTopK)
 
 	if decision.NeedWeb {
+		fmt.Printf("    🌐 Step 2: Web search required\n")
 		// Step 2: 自动触发检索与二次回答
 		queries := decision.Queries
 		if len(queries) == 0 {
+			fmt.Printf("    🔄 No queries provided, using original question\n")
 			queries = []string{a.info.qParsed}
 		}
-		fmt.Println("[Second Stage Triggered] queries:", queries)
+		fmt.Printf("    🔍 Search queries: %v\n", queries)
 
 		// 使用 ChatGPT 建议的搜索数量，如果没有则使用默认值
 		searchTopK := decision.SearchTopK
