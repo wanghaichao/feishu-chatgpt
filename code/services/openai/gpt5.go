@@ -35,8 +35,9 @@ type ChatGPTRequestBody struct {
 }
 
 type ArkOpenAICompatRequestBody struct {
-	Model    string     `json:"model"`
-	Messages []Messages `json:"messages"`
+	Model     string     `json:"model"`
+	Messages  []Messages `json:"messages"`
+	MaxTokens int        `json:"max_completion_tokens,omitempty"`
 }
 
 type ArkBotRequestBody struct {
@@ -56,7 +57,11 @@ type ArkBotResponseBody struct {
 	} `json:"output"`
 }
 
-func (gpt ChatGPT) Completions(msg []Messages) (resp Messages, err error) {
+func (gpt *ChatGPT) Completions(msg []Messages) (resp Messages, err error) {
+	return gpt.CompletionsWithMaxTokens(msg, maxTokens)
+}
+
+func (gpt *ChatGPT) CompletionsWithMaxTokens(msg []Messages, maxTokens int) (resp Messages, err error) {
 	// Ark provider branch
 	if gpt.Provider == "ark" {
 		if gpt.ArkApiUrl == "" || gpt.ArkBotId == "" {
@@ -68,7 +73,7 @@ func (gpt ChatGPT) Completions(msg []Messages) (resp Messages, err error) {
 		}
 		// 1) 优先走 OpenAI 兼容路径: /bots/chat/completions，body 为 {model, messages}
 		endpointA := fmt.Sprintf("%s/chat/completions", base)
-		compatReq := ArkOpenAICompatRequestBody{Model: gpt.ArkBotId, Messages: msg}
+		compatReq := ArkOpenAICompatRequestBody{Model: gpt.ArkBotId, Messages: msg, MaxTokens: maxTokens}
 		compatResp := &ChatGPTResponseBody{}
 		err = gpt.sendRequestWithBodyType(endpointA, "POST", jsonBody, compatReq, compatResp)
 		if err == nil && len(compatResp.Choices) > 0 {

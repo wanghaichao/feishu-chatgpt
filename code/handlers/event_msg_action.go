@@ -32,11 +32,12 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 		Answer     string   `json:"answer,omitempty"`
 		Reason     string   `json:"reason,omitempty"`
 		SearchTopK int      `json:"search_top_k,omitempty"` // ChatGPT 建议的搜索数量
+		MaxTokens  int      `json:"max_tokens,omitempty"`   // ChatGPT 建议的最大token数
 	}
 
 	fmt.Printf("    🎯 Step 1: Building classification prompt...\n")
 	// Build classification prompt
-	classifySystem := openai.Messages{Role: "system", Content: "你是一个助手。请严格输出 JSON，不要包含多余文本。根据用户问题判断是否需要联网检索外部信息才能给出可靠答案。若需要，请给出3-6条精炼的中文检索关键信息（queries），并建议每个查询的搜索数量（search_top_k，建议1-5个结果）。若不需要，请直接给出最终答案。必须输出如下 JSON：{\"need_web\": boolean, \"queries\": string[], \"answer\": string, \"search_top_k\": number}. 当 need_web=true 时，尽量填写 queries 和 search_top_k，answer 可留空；当 need_web=false 时，必须填写 answer，queries 和 search_top_k 可留空。"}
+	classifySystem := openai.Messages{Role: "system", Content: "你是一个助手。请严格输出 JSON，不要包含多余文本。根据用户问题判断是否需要联网检索外部信息才能给出可靠答案。若需要，请给出3-6条精炼的中文检索关键信息（queries），并建议每个查询的搜索数量（search_top_k，建议1-5个结果）和回答的最大token数（max_tokens，建议500-2000）。若不需要，请直接给出最终答案。必须输出如下 JSON：{\"need_web\": boolean, \"queries\": string[], \"answer\": string, \"search_top_k\": number, \"max_tokens\": number}. 当 need_web=true 时，尽量填写 queries、search_top_k 和 max_tokens，answer 可留空；当 need_web=false 时，必须填写 answer 和 max_tokens，queries 和 search_top_k 可留空。"}
 
 	fmt.Printf("    📚 Getting session history...\n")
 	history := a.handler.sessionCache.GetMsg(*a.info.sessionId)
@@ -95,8 +96,8 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 	if b, _ := json.Marshal(decision); len(b) > 0 {
 		fmt.Printf("    📊 Decision: %s\n", string(b))
 	}
-	fmt.Printf("    🔍 Decision details: need_web=%t, queries_count=%d, search_top_k=%d\n",
-		decision.NeedWeb, len(decision.Queries), decision.SearchTopK)
+	fmt.Printf("    🔍 Decision details: need_web=%t, queries_count=%d, search_top_k=%d, max_tokens=%d\n",
+		decision.NeedWeb, len(decision.Queries), decision.SearchTopK, decision.MaxTokens)
 
 	if decision.NeedWeb {
 		fmt.Printf("    🌐 Step 2: Web search required\n")
@@ -317,7 +318,18 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 		userWithCtx := openai.Messages{Role: "user", Content: fmt.Sprintf("用户问题：%s\n检索资料(JSON)：%s", a.info.qParsed, contextJSON)}
 		secondMsgs := append(history, webSystem)
 		secondMsgs = append(secondMsgs, userWithCtx)
-		finalResp, err := a.handler.gpt.Completions(secondMsgs)
+
+		// 使用 ChatGPT 建议的 max_tokens
+		maxTokens := decision.MaxTokens
+		if maxTokens <= 0 {
+			maxTokens = 1500 // 默认值
+		}
+		if maxTokens > 4000 {
+			maxTokens = 4000 // 限制最大值
+		}
+		fmt.Printf("    🎯 Using ChatGPT suggested max_tokens: %d\n", maxTokens)
+
+		finalResp, err := a.handler.gpt.CompletionsWithMaxTokens(secondMsgs, maxTokens)
 		if err != nil {
 			replyMsg(*a.ctx, fmt.Sprintf("🤖️：消息机器人摆烂了，请稍后再试～\n错误信息: %v", err), a.info.msgId)
 			return false
@@ -343,7 +355,18 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 	if answer == "" {
 		// Safety fallback: run a normal completion to produce an answer
 		msg := append(history, openai.Messages{Role: "user", Content: a.info.qParsed})
-		completions, err2 := a.handler.gpt.Completions(msg)
+
+		// 使用 ChatGPT 建议的 max_tokens
+		maxTokens := decision.MaxTokens
+		if maxTokens <= 0 {
+			maxTokens = 1500 // 默认值
+		}
+		if maxTokens > 4000 {
+			maxTokens = 4000 // 限制最大值
+		}
+		fmt.Printf("    🎯 Using ChatGPT suggested max_tokens for fallback: %d\n", maxTokens)
+
+		completions, err2 := a.handler.gpt.CompletionsWithMaxTokens(msg, maxTokens)
 		if err2 != nil {
 			replyMsg(*a.ctx, fmt.Sprintf("🤖️：消息机器人摆烂了，请稍后再试～\n错误信息: %v", err2), a.info.msgId)
 			return false
