@@ -128,7 +128,7 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 		// 获取并发数配置
 		maxConcurrency := a.handler.config.SearchMaxConcurrency
 		if maxConcurrency <= 0 {
-			maxConcurrency = 4 // 默认并发数
+			maxConcurrency = 3 // 默认并发数
 		}
 		if maxConcurrency > 10 {
 			maxConcurrency = 10 // 限制最大并发数
@@ -286,35 +286,21 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 			fmt.Printf("🎯 [Concurrent] Search completed: %d successful, %d failed\n", successfulSearches, failedSearches)
 		}
 		fmt.Println("[Second Stage] built contexts:", len(ctxParts))
+
+		// 容错处理：即使部分搜索失败，只要有成功的就继续
 		if len(ctxParts) == 0 {
-			// 无法拿到上下文，退化为提示 queries
-			var payload string
-			if len(decision.Queries) > 0 {
-				b, _ := json.Marshal(decision.Queries)
-				payload = fmt.Sprintf("需要联网检索。请根据以下关键信息进行查询：\n%s", processNewLine(cleanTextBlock(string(b))))
-			} else {
-				payload = "需要联网检索，但暂未获取到有效资料。请稍后重试。"
-			}
-			fmt.Println("[Second Stage] no context, reply with queries")
-			finalHistory := append(history, openai.Messages{Role: "user", Content: a.info.qParsed})
-			finalHistory = append(finalHistory, openai.Messages{Role: "assistant", Content: payload})
-			a.handler.sessionCache.SetMsg(*a.info.sessionId, finalHistory)
-			if len(finalHistory) == 2 {
-				sendNewTopicCard(*a.ctx, a.info.sessionId, a.info.msgId, payload)
-				return false
-			}
-			if err := replyMsg(*a.ctx, payload, a.info.msgId); err != nil {
-				replyMsg(*a.ctx, fmt.Sprintf("🤖️：消息机器人摆烂了，请稍后再试～\n错误信息: %v", err), a.info.msgId)
-				return false
-			}
-			return true
+			fmt.Printf("⚠️ [Second Stage] No successful searches, but continuing with ChatGPT anyway\n")
+			// 即使没有搜索上下文，也继续向 ChatGPT 提问，让它基于自己的知识回答
+			ctxParts = []string{"{\"query\": \"用户问题\", \"sources\": \"基于现有知识回答\"}"}
+		} else {
+			fmt.Printf("✅ [Second Stage] Using %d successful search results, ignoring %d failed searches\n", len(ctxParts), failedSearches)
 		}
 		// 组合检索上下文为 JSON 数组字符串
 		contextJSON := "[" + strings.Join(ctxParts, ",") + "]"
 		fmt.Printf("[Second Stage] Final context JSON length: %d chars\n", len(contextJSON))
 		fmt.Printf("[Second Stage] Final context JSON preview: %s...\n", contextJSON[:min(500, len(contextJSON))])
 		// 构建二次提问消息，携带检索资料
-		webSystem := openai.Messages{Role: "system", Content: "你是一个联网助手。根据给定的检索资料（JSON 数组，含 query 与 sources 列表，每个 source 有 title、url、content），请严谨回答用户问题：\n- 如果你的知识库有此信息优先使用你的知识,没有的再使用资料\n- 不确定时明确说明不确定；\n- 在内容末尾列出引用的网址列表。"}
+		webSystem := openai.Messages{Role: "system", Content: "你是一个联网助手。根据给定的检索资料（JSON 数组，含 query 与 sources 列表，每个 source 有 title、url、content），请严谨回答用户问题：\n- 优先使用检索到的资料信息\n- 如果检索资料不足或为空，请基于你的知识库尽力回答\n- 如果某些搜索失败，请基于成功的搜索结果和你的知识给出最佳答案\n- 不确定时明确说明不确定；\n- 在内容末尾列出引用的网址列表（如果有的话）。"}
 		userWithCtx := openai.Messages{Role: "user", Content: fmt.Sprintf("用户问题：%s\n检索资料(JSON)：%s", a.info.qParsed, contextJSON)}
 		secondMsgs := append(history, webSystem)
 		secondMsgs = append(secondMsgs, userWithCtx)
