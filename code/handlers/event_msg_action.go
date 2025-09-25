@@ -319,22 +319,18 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 			fmt.Printf("✅ [Second Stage] JSON format is valid\n")
 		}
 		// 构建二次提问消息，携带检索资料
-		webSystem := openai.Messages{Role: "system", Content: "你是一个联网助手。根据给定的检索资料（JSON 数组，含 query 与 sources 列表，每个 source 有 title、url、content），请严谨回答用户问题：\n- 优先使用检索到的资料信息\n- 如果检索资料不足或为空，请基于你的知识库尽力回答\n- 如果某些搜索失败，请基于成功的搜索结果和你的知识给出最佳答案\n- 不确定时明确说明不确定；\n- 在内容末尾列出引用的网址列表（如果有的话）。"}
+		webSystem := openai.Messages{Role: "system", Content: "你是一个智能助手。请根据提供的检索资料回答用户问题。如果检索资料不足，请基于你的知识尽力回答。请提供准确、有用的信息。"}
 		userWithCtx := openai.Messages{Role: "user", Content: fmt.Sprintf("用户问题：%s\n检索资料(JSON)：%s", a.info.qParsed, contextJSON)}
 		secondMsgs := append(history, webSystem)
 		secondMsgs = append(secondMsgs, userWithCtx)
 
+		// 调试信息
+		fmt.Printf("    📋 [Second Stage] Messages count: %d\n", len(secondMsgs))
+		fmt.Printf("    📋 [Second Stage] User question: %s\n", a.info.qParsed)
+		fmt.Printf("    📋 [Second Stage] Context JSON length: %d chars\n", len(contextJSON))
+
 		// 使用 ChatGPT 建议的 max_tokens
-		maxTokens := decision.MaxTokens
-		if maxTokens <= 0 {
-			maxTokens = 1500 // 默认值
-		}
-		if maxTokens < 100 {
-			maxTokens = 500 // 最小值
-		}
-		if maxTokens > 4000 {
-			maxTokens = 4000 // 限制最大值
-		}
+		maxTokens := 10000
 		fmt.Printf("    🎯 Using ChatGPT suggested max_tokens: %d\n", maxTokens)
 
 		finalResp, err := a.handler.gpt.CompletionsWithMaxTokens(secondMsgs, maxTokens)
@@ -347,6 +343,26 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 		fmt.Printf("    ✅ Second stage OpenAI call successful\n")
 		fmt.Printf("    📄 Response content length: %d\n", len(finalResp.Content))
 		fmt.Printf("    📄 Response content: %s\n", finalResp.Content)
+
+		// 检查响应是否为通用"无法回答"消息
+		responseText := strings.TrimSpace(finalResp.Content)
+		if strings.Contains(responseText, "抱歉，我暂时无法回答") ||
+			strings.Contains(responseText, "无法回答您的问题") ||
+			strings.Contains(responseText, "问题过于复杂") {
+			fmt.Printf("    ⚠️ Second stage returned generic 'cannot answer' response, trying simplified approach...\n")
+
+			// 尝试简化的请求
+			simpleMsg := openai.Messages{Role: "user", Content: a.info.qParsed}
+			simpleMsgs := append(history, simpleMsg)
+
+			finalResp, err = a.handler.gpt.CompletionsWithMaxTokens(simpleMsgs, 1500)
+			if err != nil {
+				fmt.Printf("    ❌ Simplified retry also failed: %v\n", err)
+			} else {
+				fmt.Printf("    ✅ Simplified retry successful\n")
+				fmt.Printf("    📄 Simplified response: %s\n", finalResp.Content)
+			}
+		}
 
 		// 检查响应是否为空，如果为空则重试
 		if strings.TrimSpace(finalResp.Content) == "" {
