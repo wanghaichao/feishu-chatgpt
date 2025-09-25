@@ -95,16 +95,27 @@ func (gpt *ChatGPT) CompletionsWithMaxTokens(msg []Messages, maxTokens int) (res
 		Messages:  msg,
 		MaxTokens: maxTokens,
 	}
+
+	fmt.Printf("[OpenAI Request] Model: %s, MaxTokens: %d, Messages: %d\n", engine, maxTokens, len(msg))
+
 	gptResponseBody := &ChatGPTResponseBody{}
 	err = gpt.sendRequestWithBodyType(gpt.ApiUrl+"/chat/completions", "POST",
 		jsonBody,
 		requestBody, gptResponseBody)
 
+	fmt.Printf("[OpenAI Response] Error: %v, Choices count: %d\n", err, len(gptResponseBody.Choices))
+	if len(gptResponseBody.Choices) > 0 {
+		fmt.Printf("[OpenAI Response] First choice content length: %d\n", len(gptResponseBody.Choices[0].Message.Content))
+		fmt.Printf("[OpenAI Response] First choice content: %s\n", gptResponseBody.Choices[0].Message.Content)
+	}
+
 	if err == nil && len(gptResponseBody.Choices) > 0 {
 		resp = gptResponseBody.Choices[0].Message
 	} else {
 		resp = Messages{}
-		err = errors.New("openai 请求失败")
+		if err == nil {
+			err = errors.New("openai 请求失败: 没有返回选择")
+		}
 	}
 	return resp, err
 }

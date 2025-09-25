@@ -324,6 +324,9 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 		if maxTokens <= 0 {
 			maxTokens = 1500 // 默认值
 		}
+		if maxTokens < 100 {
+			maxTokens = 500 // 最小值
+		}
 		if maxTokens > 4000 {
 			maxTokens = 4000 // 限制最大值
 		}
@@ -331,11 +334,38 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 
 		finalResp, err := a.handler.gpt.CompletionsWithMaxTokens(secondMsgs, maxTokens)
 		if err != nil {
+			fmt.Printf("    ❌ Second stage OpenAI call failed: %v\n", err)
 			replyMsg(*a.ctx, fmt.Sprintf("🤖️：消息机器人摆烂了，请稍后再试～\n错误信息: %v", err), a.info.msgId)
 			return false
 		}
-		// debug: print second-stage raw output
-		fmt.Println("[OpenAI Second] raw:", finalResp.Content)
+
+		fmt.Printf("    ✅ Second stage OpenAI call successful\n")
+		fmt.Printf("    📄 Response content length: %d\n", len(finalResp.Content))
+		fmt.Printf("    📄 Response content: %s\n", finalResp.Content)
+
+		// 检查响应是否为空，如果为空则重试
+		if strings.TrimSpace(finalResp.Content) == "" {
+			fmt.Printf("    ⚠️ Second stage response is empty, retrying with higher max_tokens...\n")
+			maxTokens = maxTokens * 2
+			if maxTokens > 4000 {
+				maxTokens = 4000
+			}
+			fmt.Printf("    🔄 Retrying with max_tokens: %d\n", maxTokens)
+
+			finalResp, err = a.handler.gpt.CompletionsWithMaxTokens(secondMsgs, maxTokens)
+			if err != nil {
+				fmt.Printf("    ❌ Retry failed: %v\n", err)
+				replyMsg(*a.ctx, "🤖️：抱歉，我无法生成有效的回答，请稍后再试。", a.info.msgId)
+				return false
+			}
+
+			if strings.TrimSpace(finalResp.Content) == "" {
+				fmt.Printf("    ❌ Retry also returned empty response\n")
+				replyMsg(*a.ctx, "🤖️：抱歉，我无法生成有效的回答。这可能是因为问题过于复杂或需要更多上下文信息。请尝试重新表述您的问题。", a.info.msgId)
+				return false
+			}
+			fmt.Printf("    ✅ Retry successful, got response: %s\n", finalResp.Content[:min(100, len(finalResp.Content))])
+		}
 		finalHistory := append(history, openai.Messages{Role: "user", Content: a.info.qParsed})
 		finalHistory = append(finalHistory, openai.Messages{Role: "assistant", Content: finalResp.Content})
 		a.handler.sessionCache.SetMsg(*a.info.sessionId, finalHistory)
@@ -343,10 +373,13 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 			sendNewTopicCard(*a.ctx, a.info.sessionId, a.info.msgId, finalResp.Content)
 			return false
 		}
+		fmt.Printf("    📤 Sending response to user...\n")
 		if err := replyMsg(*a.ctx, finalResp.Content, a.info.msgId); err != nil {
+			fmt.Printf("    ❌ Failed to send response: %v\n", err)
 			replyMsg(*a.ctx, fmt.Sprintf("🤖️：消息机器人摆烂了，请稍后再试～\n错误信息: %v", err), a.info.msgId)
 			return false
 		}
+		fmt.Printf("    ✅ Response sent successfully\n")
 		return true
 	}
 
@@ -361,6 +394,9 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 		if maxTokens <= 0 {
 			maxTokens = 1500 // 默认值
 		}
+		if maxTokens < 100 {
+			maxTokens = 500 // 最小值
+		}
 		if maxTokens > 4000 {
 			maxTokens = 4000 // 限制最大值
 		}
@@ -368,11 +404,38 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 
 		completions, err2 := a.handler.gpt.CompletionsWithMaxTokens(msg, maxTokens)
 		if err2 != nil {
+			fmt.Printf("    ❌ Fallback OpenAI call failed: %v\n", err2)
 			replyMsg(*a.ctx, fmt.Sprintf("🤖️：消息机器人摆烂了，请稍后再试～\n错误信息: %v", err2), a.info.msgId)
 			return false
 		}
-		// debug: print direct-fallback raw output
-		fmt.Println("[OpenAI Direct Fallback] raw:", completions.Content)
+
+		fmt.Printf("    ✅ Fallback OpenAI call successful\n")
+		fmt.Printf("    📄 Fallback response content length: %d\n", len(completions.Content))
+		fmt.Printf("    📄 Fallback response content: %s\n", completions.Content)
+
+		// 检查响应是否为空，如果为空则重试
+		if strings.TrimSpace(completions.Content) == "" {
+			fmt.Printf("    ⚠️ Fallback response is empty, retrying with higher max_tokens...\n")
+			maxTokens = maxTokens * 2
+			if maxTokens > 4000 {
+				maxTokens = 4000
+			}
+			fmt.Printf("    🔄 Retrying fallback with max_tokens: %d\n", maxTokens)
+
+			completions, err2 = a.handler.gpt.CompletionsWithMaxTokens(msg, maxTokens)
+			if err2 != nil {
+				fmt.Printf("    ❌ Fallback retry failed: %v\n", err2)
+				replyMsg(*a.ctx, "🤖️：抱歉，我无法生成有效的回答，请稍后再试。", a.info.msgId)
+				return false
+			}
+
+			if strings.TrimSpace(completions.Content) == "" {
+				fmt.Printf("    ❌ Fallback retry also returned empty response\n")
+				replyMsg(*a.ctx, "🤖️：抱歉，我无法生成有效的回答。这可能是因为问题过于复杂或需要更多上下文信息。请尝试重新表述您的问题。", a.info.msgId)
+				return false
+			}
+			fmt.Printf("    ✅ Fallback retry successful, got response: %s\n", completions.Content[:min(100, len(completions.Content))])
+		}
 		msg = append(msg, completions)
 		a.handler.sessionCache.SetMsg(*a.info.sessionId, msg)
 		if len(msg) == 2 {
