@@ -15,10 +15,15 @@ import (
 
 // 责任链
 func chain(data *ActionInfo, actions ...Action) bool {
-	for _, v := range actions {
+	for i, v := range actions {
+		actionName := fmt.Sprintf("%T", v)
+		fmt.Printf("  🔧 Action %d: %s\n", i+1, actionName)
+
 		if !v.Execute(data) {
+			fmt.Printf("  ⏹️ Action %d (%s) returned false, stopping chain\n", i+1, actionName)
 			return false
 		}
+		fmt.Printf("  ✅ Action %d (%s) completed\n", i+1, actionName)
 	}
 	return true
 }
@@ -49,18 +54,21 @@ func judgeMsgType(event *larkim.P2MessageReceiveV1) (string, error) {
 }
 
 func (m MessageHandler) msgReceivedHandler(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
+	fmt.Printf("📨 Received message event: %s\n", *event.Event.Message.MessageId)
+
 	handlerType := judgeChatType(event)
+	fmt.Printf("🔍 Chat type: %s\n", handlerType)
 	if handlerType == "otherChat" {
-		fmt.Println("unknown chat type")
+		fmt.Println("❌ Unknown chat type, ignoring")
 		return nil
 	}
-	//fmt.Println(larkcore.Prettify(event.Event.Message))
 
 	msgType, err := judgeMsgType(event)
 	if err != nil {
-		fmt.Printf("error getting message type: %v\n", err)
+		fmt.Printf("❌ Error getting message type: %v\n", err)
 		return nil
 	}
+	fmt.Printf("📝 Message type: %s\n", msgType)
 
 	content := event.Event.Message.Content
 	msgId := event.Event.Message.MessageId
@@ -68,16 +76,28 @@ func (m MessageHandler) msgReceivedHandler(ctx context.Context, event *larkim.P2
 	chatId := event.Event.Message.ChatId
 	mention := event.Event.Message.Mentions
 
+	fmt.Printf("📋 Message details: msgId=%s, chatId=%s\n", *msgId, *chatId)
+	if rootId != nil {
+		fmt.Printf("🔗 Root ID: %s\n", *rootId)
+	}
+
 	sessionId := rootId
 	if sessionId == nil || *sessionId == "" {
 		sessionId = msgId
+		fmt.Printf("🆔 Using msgId as sessionId: %s\n", *sessionId)
+	} else {
+		fmt.Printf("🆔 Using rootId as sessionId: %s\n", *sessionId)
 	}
+
+	parsedContent := strings.Trim(parseContent(*content), " ")
+	fmt.Printf("📝 Parsed content: %s\n", parsedContent)
+
 	msgInfo := MsgInfo{
 		handlerType: handlerType,
 		msgType:     msgType,
 		msgId:       msgId,
 		chatId:      chatId,
-		qParsed:     strings.Trim(parseContent(*content), " "),
+		qParsed:     parsedContent,
 		fileKey:     parseFileKey(*content),
 		imageKey:    parseImageKey(*content),
 		sessionId:   sessionId,
@@ -88,6 +108,8 @@ func (m MessageHandler) msgReceivedHandler(ctx context.Context, event *larkim.P2
 		handler: &m,
 		info:    &msgInfo,
 	}
+
+	fmt.Println("🔄 Starting action chain...")
 	actions := []Action{
 		&ProcessedUniqueAction{}, //避免重复处理
 		&ProcessMentionAction{},  //判断机器人是否应该被调用
@@ -102,9 +124,11 @@ func (m MessageHandler) msgReceivedHandler(ctx context.Context, event *larkim.P2
 		&BalanceAction{},         //余额处理
 		&RolePlayAction{},        //角色扮演处理
 		&MessageAction{},         //消息处理
-
 	}
+
+	fmt.Printf("📋 Executing %d actions in chain\n", len(actions))
 	chain(data, actions...)
+	fmt.Println("✅ Action chain completed")
 	return nil
 }
 
