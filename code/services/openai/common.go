@@ -57,6 +57,11 @@ func (gpt ChatGPT) doAPIRequestWithRetry(url, method string, bodyType requestBod
 	var writer *multipart.Writer
 	api = gpt.Lb.GetAPI()
 
+	// 检查 API 是否为 nil
+	if api == nil {
+		return errors.New("no available API key found")
+	}
+
 	switch bodyType {
 	case jsonBody:
 		requestBodyData, err = json.Marshal(requestBody)

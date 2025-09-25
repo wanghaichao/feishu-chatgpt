@@ -113,13 +113,27 @@ func (gpt *ChatGPT) CompletionsWithMaxTokens(msg []Messages, maxTokens int) (res
 
 	if len(gptResponseBody.Choices) > 0 {
 		choice := gptResponseBody.Choices[0]
-		fmt.Printf("[OpenAI Response] First choice role: %s\n", choice.Message.Role)
-		fmt.Printf("[OpenAI Response] First choice content length: %d\n", len(choice.Message.Content))
-		fmt.Printf("[OpenAI Response] First choice content: '%s'\n", choice.Message.Content)
+
+		// 安全地访问 choice.Message
+		if choice.Message.Role != "" {
+			fmt.Printf("[OpenAI Response] First choice role: %s\n", choice.Message.Role)
+		} else {
+			fmt.Printf("[OpenAI Response] First choice role: (empty)\n")
+		}
+
+		if choice.Message.Content != "" {
+			fmt.Printf("[OpenAI Response] First choice content length: %d\n", len(choice.Message.Content))
+			fmt.Printf("[OpenAI Response] First choice content: '%s'\n", choice.Message.Content)
+		} else {
+			fmt.Printf("[OpenAI Response] First choice content length: 0\n")
+			fmt.Printf("[OpenAI Response] First choice content: (empty)\n")
+		}
 
 		// 检查是否有 finish_reason
 		if choice.FinishReason != "" {
 			fmt.Printf("[OpenAI Response] Finish reason: %s\n", choice.FinishReason)
+		} else {
+			fmt.Printf("[OpenAI Response] Finish reason: (empty)\n")
 		}
 	}
 

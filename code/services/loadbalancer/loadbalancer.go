@@ -20,9 +20,25 @@ type LoadBalancer struct {
 
 func NewLoadBalancer(keys []string) *LoadBalancer {
 	lb := &LoadBalancer{}
-	for _, key := range keys {
-		lb.apis = append(lb.apis, &API{Key: key})
+
+	// 检查 keys 是否为空
+	if len(keys) == 0 {
+		fmt.Printf("Warning: No API keys provided to LoadBalancer\n")
+		return lb
 	}
+
+	for _, key := range keys {
+		if key != "" { // 只添加非空的 key
+			lb.apis = append(lb.apis, &API{Key: key})
+		}
+	}
+
+	// 检查是否有有效的 API keys
+	if len(lb.apis) == 0 {
+		fmt.Printf("Warning: No valid API keys found in LoadBalancer\n")
+		return lb
+	}
+
 	//SetAvailabilityForAll true
 	lb.SetAvailabilityForAll(true)
 	return lb
@@ -32,9 +48,15 @@ func (lb *LoadBalancer) GetAPI() *API {
 	lb.mu.RLock()
 	defer lb.mu.RUnlock()
 
+	// 检查 lb.apis 是否为空
+	if len(lb.apis) == 0 {
+		fmt.Printf("LoadBalancer has no APIs configured\n")
+		return nil
+	}
+
 	var availableAPIs []*API
 	for _, api := range lb.apis {
-		if api.Available {
+		if api != nil && api.Available {
 			availableAPIs = append(availableAPIs, api)
 		}
 	}
@@ -43,8 +65,11 @@ func (lb *LoadBalancer) GetAPI() *API {
 		fmt.Printf("No available API, revive one randomly\n")
 		rand.Seed(time.Now().UnixNano())
 		index := rand.Intn(len(lb.apis))
-		lb.apis[index].Available = true
-		return lb.apis[index]
+		if lb.apis[index] != nil {
+			lb.apis[index].Available = true
+			return lb.apis[index]
+		}
+		return nil
 	}
 
 	selectedAPI := availableAPIs[0]
