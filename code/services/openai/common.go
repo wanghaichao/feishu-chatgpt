@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"mime/multipart"
 	"net/http"
@@ -114,14 +115,23 @@ func (gpt ChatGPT) doAPIRequestWithRetry(url, method string, bodyType requestBod
 		authKey = api.Key
 	}
 
-	req, err := http.NewRequest(method, url, bytes.NewReader(requestBodyData))
+	var reqBody io.Reader
+	if requestBodyData != nil {
+		reqBody = bytes.NewReader(requestBodyData)
+	} else {
+		reqBody = nil
+	}
+
+	req, err := http.NewRequest(method, url, reqBody)
 	if err != nil {
 		return err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 	if bodyType == formVoiceDataBody || bodyType == formPictureDataBody {
-		req.Header.Set("Content-Type", writer.FormDataContentType())
+		if writer != nil {
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+		}
 	}
 	// headers per provider
 	if gpt.Provider == "ark" {
@@ -145,14 +155,23 @@ func (gpt ChatGPT) doAPIRequestWithRetry(url, method string, bodyType requestBod
 	for retry = 0; retry <= maxRetries; retry++ {
 		response, err = client.Do(req)
 		// read body
-		if err != nil || response.StatusCode < 200 || response.StatusCode >= 300 {
+		if err != nil || (response != nil && (response.StatusCode < 200 || response.StatusCode >= 300)) {
+			var body []byte
+			var statusCode int
 
-			body, _ := ioutil.ReadAll(response.Body)
+			if response != nil {
+				body, _ = ioutil.ReadAll(response.Body)
+				statusCode = response.StatusCode
+			} else {
+				body = []byte("No response received")
+				statusCode = 0
+			}
+
 			if gpt.DebugHTTP {
-				fmt.Printf("[HTTP] Response status=%d, body=%s\n", response.StatusCode, string(body))
+				fmt.Printf("[HTTP] Response status=%d, body=%s\n", statusCode, string(body))
 			}
 			fmt.Println("body", string(body))
-			fmt.Printf("API请求失败，状态码：%d，响应体：%s\n", response.StatusCode, string(body))
+			fmt.Printf("API请求失败，状态码：%d，响应体：%s\n", statusCode, string(body))
 
 			if gpt.Provider != "ark" && api != nil {
 				gpt.Lb.SetAvailability(api.Key, false)
