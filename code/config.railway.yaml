@@ -1,0 +1,40 @@
+# Railway 部署配置
+# 飞书应用配置 - 请替换为你的实际配置
+APP_ID: "your_app_id"
+APP_SECRET: "your_app_secret"
+APP_ENCRYPT_KEY: "your_encrypt_key"
+APP_VERIFICATION_TOKEN: "your_verification_token"
+BOT_NAME: "chatGpt"
+
+# OpenAI 配置 - 请替换为你的实际配置
+OPENAI_KEY: "your_openai_key"
+API_URL: "https://api.openai.com"
+
+# 服务器配置
+HTTP_PORT: 9000
+HTTPS_PORT: 9001
+USE_HTTPS: false
+
+# 代理设置 - Railway 通常不需要代理
+HTTP_PROXY: ""
+
+# 模型服务提供商
+PROVIDER: "openai"
+
+# Ark 配置（如果使用）
+ARK_API_KEY: ""
+ARK_API_URL: ""
+ARK_BOT_ID: ""
+
+# 调试设置
+DEBUG_HTTP: false
+
+# 搜索配置
+SEARCH_ALWAYS: false
+SEARCH_TOP_K: 3
+SEARCH_ONLY_ON_KEYWORDS: false
+SEARCH_KEYWORDS: []
+
+# Google 搜索配置（可选）
+GOOGLE_API_KEY: ""
+GOOGLE_CSE_ID: ""
