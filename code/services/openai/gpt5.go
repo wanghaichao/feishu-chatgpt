@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -104,9 +105,22 @@ func (gpt *ChatGPT) CompletionsWithMaxTokens(msg []Messages, maxTokens int) (res
 		requestBody, gptResponseBody)
 
 	fmt.Printf("[OpenAI Response] Error: %v, Choices count: %d\n", err, len(gptResponseBody.Choices))
+
+	// 打印完整的响应结构用于调试
+	if responseBytes, marshalErr := json.Marshal(gptResponseBody); marshalErr == nil {
+		fmt.Printf("[OpenAI Response] Full response: %s\n", string(responseBytes))
+	}
+
 	if len(gptResponseBody.Choices) > 0 {
-		fmt.Printf("[OpenAI Response] First choice content length: %d\n", len(gptResponseBody.Choices[0].Message.Content))
-		fmt.Printf("[OpenAI Response] First choice content: %s\n", gptResponseBody.Choices[0].Message.Content)
+		choice := gptResponseBody.Choices[0]
+		fmt.Printf("[OpenAI Response] First choice role: %s\n", choice.Message.Role)
+		fmt.Printf("[OpenAI Response] First choice content length: %d\n", len(choice.Message.Content))
+		fmt.Printf("[OpenAI Response] First choice content: '%s'\n", choice.Message.Content)
+
+		// 检查是否有 finish_reason
+		if choice.FinishReason != "" {
+			fmt.Printf("[OpenAI Response] Finish reason: %s\n", choice.FinishReason)
+		}
 	}
 
 	if err == nil && len(gptResponseBody.Choices) > 0 {

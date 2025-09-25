@@ -360,11 +360,32 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 			}
 
 			if strings.TrimSpace(finalResp.Content) == "" {
-				fmt.Printf("    ❌ Retry also returned empty response\n")
-				replyMsg(*a.ctx, "🤖️：抱歉，我无法生成有效的回答。这可能是因为问题过于复杂或需要更多上下文信息。请尝试重新表述您的问题。", a.info.msgId)
-				return false
+				fmt.Printf("    ❌ Retry also returned empty response, trying fallback approach...\n")
+
+				// 尝试使用更简单的提示词和更高的 max_tokens
+				simpleSystem := openai.Messages{Role: "system", Content: "你是一个友好的助手。请简洁地回答用户的问题。"}
+				simpleUser := openai.Messages{Role: "user", Content: a.info.qParsed}
+				simpleMsgs := []openai.Messages{simpleSystem, simpleUser}
+
+				fmt.Printf("    🔄 Trying simple approach with max_tokens: 2000\n")
+				finalResp, err = a.handler.gpt.CompletionsWithMaxTokens(simpleMsgs, 2000)
+
+				if err != nil {
+					fmt.Printf("    ❌ Simple approach also failed: %v\n", err)
+					replyMsg(*a.ctx, "🤖️：抱歉，我暂时无法回答您的问题。请稍后再试或尝试重新表述您的问题。", a.info.msgId)
+					return false
+				}
+
+				if strings.TrimSpace(finalResp.Content) == "" {
+					fmt.Printf("    ❌ Simple approach also returned empty response\n")
+					replyMsg(*a.ctx, "🤖️：抱歉，我暂时无法回答您的问题。这可能是因为问题过于复杂或需要更多上下文信息。请尝试重新表述您的问题。", a.info.msgId)
+					return false
+				}
+
+				fmt.Printf("    ✅ Simple approach successful, got response: %s\n", finalResp.Content[:min(100, len(finalResp.Content))])
+			} else {
+				fmt.Printf("    ✅ Retry successful, got response: %s\n", finalResp.Content[:min(100, len(finalResp.Content))])
 			}
-			fmt.Printf("    ✅ Retry successful, got response: %s\n", finalResp.Content[:min(100, len(finalResp.Content))])
 		}
 		finalHistory := append(history, openai.Messages{Role: "user", Content: a.info.qParsed})
 		finalHistory = append(finalHistory, openai.Messages{Role: "assistant", Content: finalResp.Content})
@@ -430,11 +451,33 @@ func (*MessageAction) Execute(a *ActionInfo) bool {
 			}
 
 			if strings.TrimSpace(completions.Content) == "" {
-				fmt.Printf("    ❌ Fallback retry also returned empty response\n")
-				replyMsg(*a.ctx, "🤖️：抱歉，我无法生成有效的回答。这可能是因为问题过于复杂或需要更多上下文信息。请尝试重新表述您的问题。", a.info.msgId)
-				return false
+				fmt.Printf("    ❌ Fallback retry also returned empty response, trying simple approach...\n")
+
+				// 尝试使用最简单的提示词
+				simpleMsgs := []openai.Messages{
+					{Role: "system", Content: "你是一个友好的助手。"},
+					{Role: "user", Content: a.info.qParsed},
+				}
+
+				fmt.Printf("    🔄 Trying simple fallback with max_tokens: 2000\n")
+				completions, err2 = a.handler.gpt.CompletionsWithMaxTokens(simpleMsgs, 2000)
+
+				if err2 != nil {
+					fmt.Printf("    ❌ Simple fallback also failed: %v\n", err2)
+					replyMsg(*a.ctx, "🤖️：抱歉，我暂时无法回答您的问题。请稍后再试或尝试重新表述您的问题。", a.info.msgId)
+					return false
+				}
+
+				if strings.TrimSpace(completions.Content) == "" {
+					fmt.Printf("    ❌ Simple fallback also returned empty response\n")
+					replyMsg(*a.ctx, "🤖️：抱歉，我暂时无法回答您的问题。这可能是因为问题过于复杂或需要更多上下文信息。请尝试重新表述您的问题。", a.info.msgId)
+					return false
+				}
+
+				fmt.Printf("    ✅ Simple fallback successful, got response: %s\n", completions.Content[:min(100, len(completions.Content))])
+			} else {
+				fmt.Printf("    ✅ Fallback retry successful, got response: %s\n", completions.Content[:min(100, len(completions.Content))])
 			}
-			fmt.Printf("    ✅ Fallback retry successful, got response: %s\n", completions.Content[:min(100, len(completions.Content))])
 		}
 		msg = append(msg, completions)
 		a.handler.sessionCache.SetMsg(*a.info.sessionId, msg)
