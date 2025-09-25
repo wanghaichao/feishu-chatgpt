@@ -46,6 +46,8 @@ type Config struct {
 	GoogleApiKey string
 	// Google Custom Search Engine ID (cx)
 	GoogleCSEId string
+	// ChatGPT API timeout in seconds
+	ChatGPTTimeoutSec int
 }
 
 func LoadConfig(cfg string) *Config {
@@ -87,6 +89,7 @@ func LoadConfig(cfg string) *Config {
 		SearchKeywords:             getViperStringArray("SEARCH_KEYWORDS", []string{"/read", "联网", "上网", "google", "谷歌", "搜索", "查一下", "最新", "实时"}),
 		GoogleApiKey:               getViperStringValue("GOOGLE_API_KEY", ""),
 		GoogleCSEId:                getViperStringValue("GOOGLE_CSE_ID", ""),
+		ChatGPTTimeoutSec:          getViperIntValue("CHATGPT_TIMEOUT_SEC", 120),
 	}
 
 	return config

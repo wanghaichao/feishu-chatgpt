@@ -38,6 +38,8 @@ type ChatGPT struct {
 	ArkBotId  string
 	// debug
 	DebugHTTP bool
+	// ChatGPT API timeout in seconds
+	ChatGPTTimeoutSec int
 }
 
 type requestBodyType int
@@ -214,7 +216,14 @@ func (gpt ChatGPT) doAPIRequestWithRetry(url, method string, bodyType requestBod
 func (gpt ChatGPT) sendRequestWithBodyType(link, method string, bodyType requestBodyType,
 	requestBody interface{}, responseBody interface{}) error {
 	var err error
-	client := &http.Client{Timeout: 110 * time.Second}
+
+	// 使用配置的超时时间，默认30秒
+	timeout := 30 * time.Second
+	if gpt.ChatGPTTimeoutSec > 0 {
+		timeout = time.Duration(gpt.ChatGPTTimeoutSec) * time.Second
+	}
+
+	client := &http.Client{Timeout: timeout}
 	if gpt.HttpProxy == "" {
 		err = gpt.doAPIRequestWithRetry(link, method, bodyType,
 			requestBody, responseBody, client, 3)
@@ -243,14 +252,15 @@ func NewChatGPT(config initialization.Config) *ChatGPT {
 	httpProxy := config.HttpProxy
 	lb := loadbalancer.NewLoadBalancer(apiKeys)
 	return &ChatGPT{
-		Lb:        lb,
-		ApiKey:    apiKeys,
-		ApiUrl:    apiUrl,
-		HttpProxy: httpProxy,
-		Provider:  config.Provider,
-		ArkApiKey: config.ArkApiKey,
-		ArkApiUrl: config.ArkApiUrl,
-		ArkBotId:  config.ArkBotId,
-		DebugHTTP: config.DebugHTTP,
+		Lb:                lb,
+		ApiKey:            apiKeys,
+		ApiUrl:            apiUrl,
+		HttpProxy:         httpProxy,
+		Provider:          config.Provider,
+		ArkApiKey:         config.ArkApiKey,
+		ArkApiUrl:         config.ArkApiUrl,
+		ArkBotId:          config.ArkBotId,
+		DebugHTTP:         config.DebugHTTP,
+		ChatGPTTimeoutSec: config.ChatGPTTimeoutSec,
 	}
 }
